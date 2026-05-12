@@ -18,11 +18,27 @@
 1. 2.4.6 API / APIM / Application Insights 总览矩阵
 2. 资源创建方式总览
 3. `.env.local.L4` 所需变量的来源对齐
+4. 多应用项目骨架与跨应用统一宪章落位
 
 配套文件：
 
-- 环境变量模板：`.env.local.L4.example`
-- 执行清单：`docs/domain4/bootstrap-checklist.md`
+- 环境变量配置：`.env.local.L4`
+- 设计文档目录：`docs/`
+- 跨应用统一宪章目录：`docs/charters/`
+- Dashboard 设计工作区：`AIGovernDashboardDesign/`
+- Domain 4 前置条件设计：`docs/design-L2-domain-4-prerequisites.md`
+- Domain 4 低级别设计：`docs/design-L2-domain-4-prerequisites-lowleveldesign.md`
+- Domain 4 输出可信设计：`docs/design-L2-domain-4-output-trustworthiness.md`
+
+## 目录框架
+
+当前仓库按“跨应用规则、设计工作区、应用实现、共享能力、基础设施”分层：
+
+- `docs/`：权威需求、设计约束、跨应用统一宪章
+- `AIGovernDashboardDesign/`：Dashboard 的调研、方法论、信息架构、KPI、原型与决策记录
+- `apps/`：各个独立应用，例如 dashboard、RAG service、Tier1、Tier2、runner
+- `packages/`：多个应用共享的数据契约与观测能力
+- `infra/`：Azure、APIM、监控等基础设施脚本与配置
 
 ## 2.4.6 API / APIM / Application Insights 总览矩阵
 
@@ -49,13 +65,13 @@
 
 | # | 资源类型 | 资源名 | 资源组 | SKU / 规格 | Tag: AI= | 完成后填入变量 |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | 资源组 | `AIGovernDomain4RG` | N/A | - | `Domain4-ResourceGroup` | `L4_RESOURCE_GROUP` |
-| M2 | API Management | `AIGovernDomain4APIM` | `AIGovernDomain4RG` | Developer，canadaeast | `Domain4-APIM` | `L4_APIM_ENDPOINT`、`L4_APIM_SUBSCRIPTION_KEY` |
-| M3 | App Service Plan | `AIGovernDomain4ASP` | `AIGovernDomain4RG` | B2，Linux，canadaeast | `Domain4-AppServicePlan` | `L4_APP_SERVICE_PLAN_NAME` |
-| M4 | Web App | `AIGovernRAGService` | `AIGovernDomain4RG` | Python 3.11，使用 M3 | `Domain4-RAGService` | `L4_RAG_SERVICE_URL` |
-| M5 | Web App | `AIGovernTier1App` | `AIGovernDomain4RG` | Python 3.11，使用 M3 | `Domain4-Tier1App` | `L4_TIER1_APP_URL` |
-| M6 | Web App | `AIGovernTier2App` | `AIGovernDomain4RG` | Python 3.11，使用 M3 | `Domain4-Tier2App` | `L4_TIER2_APP_URL` |
-| M7 | Copilot Studio Agent | `AIGovernDomain4CopilotAgent` | Copilot Studio（Power Platform） | - | N/A | `L4_COPILOT_STUDIO_BOT_ID`、`L4_COPILOT_STUDIO_DIRECTLINE_SECRET` |
+| M1 | 资源组 | `AIGovernTrustworthyDemoRG` | N/A | - | `AIGovernTrustworthyDemo-ResourceGroup` | `L4_RESOURCE_GROUP` |
+| M2 | API Management | `AIGovernTrustworthyDemoAPIM` | `AIGovernTrustworthyDemoRG` | Developer，canadaeast | `AIGovernTrustworthyDemo-APIM` | `L4_APIM_ENDPOINT`、`L4_APIM_SUBSCRIPTION_KEY` |
+| M3 | App Service Plan | `AIGovernTrustworthyDemoASP` | `AIGovernTrustworthyDemoRG` | B2，Linux，canadaeast | `AIGovernTrustworthyDemo-AppServicePlan` | `L4_APP_SERVICE_PLAN_NAME` |
+| M4 | RAG Service Web App | `AIGovernTrustworthyDemoRAGService` | `AIGovernTrustworthyDemoRG` | Python 3.11，使用 M3 | `AIGovernTrustworthyDemo-RAGService` | `L4_RAG_SERVICE_URL` |
+| M5 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` | `AIGovernTrustworthyDemoRG` | Python 3.11，使用 M3 | `AIGovernTrustworthyDemo-Tier1App` | `L4_TIER1_APP_URL` |
+| M6 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` | `AIGovernTrustworthyDemoRG` | Python 3.11，使用 M3 | `AIGovernTrustworthyDemo-Tier2App` | `L4_TIER2_APP_URL` |
+| M7 | Copilot Studio Agent | `AIGovernTrustworthyDemoCopilotStudioAgent` | Copilot Studio（Power Platform） | - | N/A | `L4_COPILOT_STUDIO_BOT_ID`、`L4_COPILOT_STUDIO_DIRECTLINE_SECRET` |
 
 > APIM 创建耗时约 30-45 分钟，建议优先开始。创建时选择 Developer SKU、canadaeast，Publisher 使用自己的邮箱。
 
@@ -65,15 +81,19 @@
 
 | # | 资源类型 | 资源名 | 资源组 | 工具 / 命令 | Tag: AI= | 完成后填入变量 |
 | --- | --- | --- | --- | --- | --- | --- |
-| A1 | SPN | `AIGovernDomain4-App` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_APP_CLIENT_ID`、`L4_APP_CLIENT_SECRET` |
-| A2 | SPN | `AIGovernDomain4-Eval` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_EVAL_CLIENT_ID`、`L4_EVAL_CLIENT_SECRET` |
-| A3 | Azure AI Search | `aigovernl4search` | `AIGovernDomain4RG` | `az search service create` | `Domain4-RAGSearch` | `L4_AI_SEARCH_ADMIN_KEY`、`L4_AI_SEARCH_QUERY_KEY` |
-| A4 | AI Search 索引 | `aigovern-rag-index` | - | Python ingestion 脚本 | N/A | `L4_AI_SEARCH_INDEX_NAME`（已知） |
-| A5 | Storage Account | `aigovernl4storage` | `AIGovernDomain4RG` | `az storage account create` | `Domain4-Storage` | `L4_STORAGE_CONNECTION_STRING` |
-| A6 | Storage Containers | `rag-documents`、`finetune-data` | - | `az storage container create` | N/A | - |
-| A7 | Azure VM | `AIGovernDomain4VM` | `AIGovernDomain4RG` | `az vm create` | `Domain4-HuggingFaceVM` | `L4_VM_PRIVATE_IP` |
-| A8 | VM 模型安装 | `Phi-3-mini via ollama` | VM 内部 | SSH + 初始化脚本 | N/A | - |
-| A9 | RBAC 角色授权 | Deploy SPN + App SPN | 各资源作用域 | `az role assignment create` | N/A | - |
+| A1 | SPN | `AIGovernTrustworthyDemoRAGServiceSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_RAG_SERVICE_CLIENT_ID`、`L4_RAG_SERVICE_CLIENT_SECRET` |
+| A2 | SPN | `AIGovernTrustworthyDemoTier1AppSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_TIER1_APP_CLIENT_ID`、`L4_TIER1_APP_CLIENT_SECRET` |
+| A3 | SPN | `AIGovernTrustworthyDemoTier2AppSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_TIER2_APP_CLIENT_ID`、`L4_TIER2_APP_CLIENT_SECRET` |
+| A4 | SPN | `AIGovernTrustworthyDemoEvaluationRunnerSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_EVALUATION_RUNNER_CLIENT_ID`、`L4_EVALUATION_RUNNER_CLIENT_SECRET` |
+| A5 | SPN | `AIGovernTrustworthyDemoPyRITRunnerSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_PYRIT_RUNNER_CLIENT_ID`、`L4_PYRIT_RUNNER_CLIENT_SECRET` |
+| A6 | Azure AI Search | `aigoverntrustworthysearch` | `AIGovernTrustworthyDemoRG` | `az search service create` | `AIGovernTrustworthyDemo-RAGSearch` | `L4_AI_SEARCH_ADMIN_KEY`、`L4_AI_SEARCH_QUERY_KEY` |
+| A7 | AI Search 索引 | `aigoverntrustworthydemo-rag-index` | - | Python ingestion 脚本 | N/A | `L4_AI_SEARCH_INDEX_NAME`（已知） |
+| A8 | Storage Account | `aigoverntrustworthydemostorage` | `AIGovernTrustworthyDemoRG` | `az storage account create` | `AIGovernTrustworthyDemo-Storage` | `L4_STORAGE_CONNECTION_STRING` |
+| A9 | Storage Container | `aigoverntrustworthydemo-rag-docs` | - | `az storage container create` | N/A | - |
+| A10 | Storage Container | `aigoverntrustworthydemo-finetune` | - | `az storage container create` | N/A | - |
+| A11 | Azure VM | `AIGovernTrustworthyDemoVM` | `AIGovernTrustworthyDemoRG` | `az vm create` | `AIGovernTrustworthyDemo-HuggingFaceVM` | `L4_VM_PRIVATE_IP` |
+| A12 | VM 模型安装 | `Phi-3-mini via ollama` | VM 内部 | SSH + 初始化脚本 | N/A | - |
+| A13 | RBAC 角色授权 | Deploy SPN + 各应用运行时 SPN | 各资源作用域 | `az role assignment create` | N/A | - |
 
 ### 6C. 复用现有资源
 
