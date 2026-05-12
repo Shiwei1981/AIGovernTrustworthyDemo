@@ -19,6 +19,11 @@
 2. 资源创建方式总览
 3. `.env.local.L4` 所需变量的来源对齐
 
+配套文件：
+
+- 环境变量模板：`.env.local.L4.example`
+- 执行清单：`docs/domain4/bootstrap-checklist.md`
+
 ## 2.4.6 API / APIM / Application Insights 总览矩阵
 
 本表用于持续跟踪每类被测对象需要暴露的 API、是否纳入 APIM、是否由 Application Insights 管理，以及当前设计状态。后续每完成一个 target，就在本表中补充实际 endpoint、resource id、状态和验证结果。
