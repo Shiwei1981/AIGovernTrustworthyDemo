@@ -11,10 +11,11 @@
       "aoai_resource": "AIGovernTrustworthyAOAI",
       "deployment_name": "AIGovernTrustworthyDemoNativeModel",
       "endpoint": "https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel/chat/completions?api-version=2025-01-01-preview",
-      "apim_path": "<to-be-configured>",
+      "apim_path": "/native-model",
+      "apim_note": "VNet Internal — APIM native-model API pending configuration (APIM MSI needs Cognitive Services OpenAI User on AIGovernTrustworthyAOAI).",
       "auth": "entra",
       "status": "active",
-      "notes": "Step 3. Direct AOAI endpoint verified 2026-05-13. APIM proxy path TBD after APIM VNet config completes."
+      "notes": "Step 3. Direct AOAI endpoint verified 2026-05-13. APIM proxy path /native-model pending (APIM MSI RBAC needed)."
     },
     {
       "target_id": "asst_sFQ8LdzWZsExbdIYc8z2MkjV",
@@ -28,12 +29,20 @@
       "agent_name": "Agent776",
       "vector_store_id": "vs_oq4SujIx2VVD2F3atnX3XpHm",
       "foundry_agent_base_url": "https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42-0493-49ff-b3c8-45df3ae06821/resourceGroups/AIGovernDemoRG/providers/Microsoft.MachineLearningServices/workspaces/aigovenaihubproject",
-      "endpoint": "<to-be-configured-via-apim>",
-      "apim_path": "<to-be-configured>",
+      "endpoint": "https://aigoverntrustworthydemoapim.azure-api.net/rag",
+      "apim_path": "/rag",
+      "apim_operations": [
+        "POST /rag/threads",
+        "POST /rag/threads/{threadId}/messages",
+        "POST /rag/threads/{threadId}/runs",
+        "GET  /rag/threads/{threadId}/runs/{runId}",
+        "GET  /rag/threads/{threadId}/messages"
+      ],
+      "apim_note": "VNet Internal — endpoint reachable only from within AIGovernCanadaEastVNET. Direct Foundry API also available via foundry_agent_base_url.",
       "auth": "entra",
       "token_scope": "https://ml.azure.com",
       "status": "active",
-      "notes": "Step 2. Foundry Agent with File Search. 5 PDFs (AI Governance standards). Vector store completed. Direct Foundry API verified 2026-05-13. APIM proxy path TBD."
+      "notes": "Step 2. Foundry Agent with File Search. 5 PDFs (AI Governance standards). Vector store completed. Direct Foundry API verified 2026-05-13. APIM rag-service configured 2026-05-13."
     },
     {
       "target_id": "AIGovernTrustworthyDemoFineTuneModel",
