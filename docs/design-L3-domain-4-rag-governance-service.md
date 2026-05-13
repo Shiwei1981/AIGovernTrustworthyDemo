@@ -324,9 +324,12 @@ APIM backend → L4_AI_FOUNDRY_PROJECT_ENDPOINT
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | App Insights 连接串（用于验证 tracing 可查询） |
 | `L4_APIM_GATEWAY_URL` | APIM gateway URL（RAG endpoint 经 APIM 暴露后的地址） |
 | `L4_RAG_SERVICE_URL` | RAG Service 最终对外 URL（经 APIM，填入后供其他步骤使用） |
-| `L4_RAG_AGENT_ID` | 创建后的 Foundry Agent ID（新增变量，待填入） |
+| `L4_RAG_AGENT_ID` | `asst_sFQ8LdzWZsExbdIYc8z2MkjV`（已通过 ai.azure.com Portal 创建，名 Agent776） |
 
-> `L4_RAG_AGENT_ID` 是本步骤新增的变量，需在 Foundry Agent 创建后写入 `.env.local.L4`。
+> **Agent 创建方式（实际执行记录）**：Foundry Agent 通过 `ai.azure.com` Portal 手动创建，  
+> 使用 `AIGovernTrustworthyAOAI` 资源下的 `gpt-4o`（deployment `AIGovernTrustworthyDemoNativeModelgpt4o`），  
+> File Search 已启用，5 个 PDF 已通过 Portal 上传。  
+> Agent ID `asst_sFQ8LdzWZsExbdIYc8z2MkjV` 已写入 `.env.local.L4`。
 
 ---
 
@@ -347,8 +350,8 @@ APIM backend → L4_AI_FOUNDRY_PROJECT_ENDPOINT
 
 1. **确认前置条件**：确认 Foundry Project 可访问、LLM deployment（步骤 3）存在；APIM 可在 Agent 就绪后并行建立
 2. ~~**建立知识库目录**~~：✅ 已完成（5 个 PDF 已放入 `apps/rag-service/knowledge-base/`）
-3. **创建 Foundry Agent**：运行 `create_agent.py`，绑定 LLM deployment，创建 Agent with File Search，记录 `L4_RAG_AGENT_ID`
-4. **上传知识库**：运行 `upload_knowledge.py`，将 5 个 PDF 上传到 Agent vector store，等待 vector store 处于 `completed` 状态
+3. ~~**创建 Foundry Agent**~~：✅ 已通过 Portal 完成。Agent `asst_sFQ8LdzWZsExbdIYc8z2MkjV`（名 Agent776），gpt-4o，File Search 已绑定
+4. ~~**上传知识库**~~：✅ 已通过 Portal 完成（5 个 PDF 上传并绑定至 Agent）
 5. **本地验证问答**：运行 `test_query.py`，确认 Agent 能正确回答 AI Governance 问题并返回 file citations
 6. **APIM 接入**：创建 APIM 实例（M4），配置 `infra/apim/rag-service-api.xml`，backend 指向 Foundry Project endpoint，开启 App Insights diagnostics
 7. **验证 APIM 链路**：运行 `test_via_apim.py`，确认经 APIM 调用成功，APIM tracing 进入 App Insights

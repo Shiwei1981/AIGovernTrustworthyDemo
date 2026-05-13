@@ -5,5 +5,5 @@
 建议子目录：
 
 - `azure/`：Azure 资源创建与配置脚本
-- `apim/`：APIM 配置、策略、API 导入模板
+- `apim/`：保留目录；当前 POC 默认不使用该目录
 - `monitoring/`：监控与诊断配置

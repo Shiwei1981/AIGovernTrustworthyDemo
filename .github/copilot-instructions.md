@@ -32,7 +32,7 @@ Apply the superpowers workflow by default in this repository.
 - Preserve the existing Domain 4 naming and resource model unless the user explicitly changes the requirements.
 - Keep Domain 4 target types separate in design and implementation. Do not merge AI apps, Foundry models, Foundry agents, Copilot Studio agents, VM-hosted models, Tier 1 apps, and Tier 2 apps into a single undifferentiated metric or workflow.
 - Keep APIM and Application Insights roles aligned with the design docs: APIM is the controlled gateway and unified test entrypoint; Application Insights is the evidence and telemetry sink.
-- When a task touches target endpoints, telemetry, or coverage logic, preserve the documented `target_type`, `target_id`, `model_name`, `model_version`, `test_tool`, `test_run_id`, `response_id`, and `correlation_id` concepts unless the design docs are intentionally being revised.
+- When a task touches target endpoints, telemetry, or coverage logic, preserve the documented `target_type`, `target_id`, `model_name`, `model_version`, `test_tool`, `test_run_id`, `trace_id`, `span_id`, `response_id`, `archive_id`, and `payload_ref` concepts unless the design docs are intentionally being revised. Only keep `correlation_id` where a legacy integration explicitly still requires it.
 - Prefer updates to `docs/` when clarifying or extending requirements, rather than scattering requirement notes into unrelated files.
 - Treat `docs/charters/` as the future home for repository-wide charter rules that must apply across all apps in this workspace.
 - Treat `.env.local.L4` as sensitive. Do not print, duplicate, or rewrite secrets unless the task explicitly requires it.

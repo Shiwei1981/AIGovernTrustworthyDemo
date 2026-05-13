@@ -154,7 +154,7 @@
 - **来源系统**：Azure Resource Graph、Azure AI Foundry / AML Registry、Microsoft Entra ID、Dataverse / SharePoint 资产台账
 - **关键字段**：asset id / resource id、asset type、asset name、lifecycle state
 - **计算逻辑**：按 Azure resource type 聚合数量，首页显示按数量排序的关键 resource type，最多展示 4 类
-- **当前实现（2026-05-09）**：`GET /api/metrics/ai-asset-inventory`；只自动发现 Resource Graph 直接返回的 AI 资产及带 `AI` tag 的 `microsoft.web/sites`；当前不纳入 APIM（测试租户暂无）
+- **当前实现（2026-05-09）**：`GET /api/metrics/ai-asset-inventory`；只自动发现 Resource Graph 直接返回的 AI 资产及带 `AI` tag 的 `microsoft.web/sites`；采用资源清单直连方案。
 
 ### 10.2 Asset Type Mix（Domain 1）
 
@@ -203,13 +203,13 @@
 
 **设计逻辑**：检测 AI 输出缺少模型身份记录的缺口，覆盖 Azure-hosted 与 VM 部署模型，不依赖内部 tracing。
 
-- **来源系统**：Application Insights（Azure 托管模型）、Azure API Management 日志（VM 模型，需配置）
+- **来源系统**：Application Insights（Azure 托管模型）、Blob archive metadata + Application Insights（VM 模型）
 - **关键字段**：response id、model_name、model_version、deployment_type
 - **计算逻辑**：`outputs missing model identity record / total outputs`；按 deployment type 拆分；首页以 number + sparkline 呈现
 
 ### 10.9 3rd-Party Dependencies（Domain 5）
 
-- **来源系统**：Azure API Management、Azure AI Foundry 模型/connection 清单、Azure Resource Graph
+- **来源系统**：APIM API / backend 配置、Azure AI Foundry 模型与 connection 清单、target registry、Azure Resource Graph
 - **计算逻辑**：汇总外部模型、API、软件包；去重后统计总数；按主要类型聚合生成分类结构
 
 ### 10.10 Critical Open-Source Findings（Domain 5）

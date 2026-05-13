@@ -4,7 +4,7 @@
 
 **英文名**：Output Trustworthiness and Content Provenance
 **设计定位**：管理 AI 输出的可信度、内容溯源能力与行为健康状态
-**治理对象范围**：AI 应用、AI Agent、Azure AI Foundry 中的模型、VM 中部署的模型（文本类模型）
+**治理对象范围**：RAG Service、AI Agent、Azure AI Foundry 中的模型、VM 中部署的模型（文本类模型）
 **本期实现**：设计已完成，待实施
 
 ---
@@ -31,8 +31,8 @@
 |---|---|---|
 | Azure AI Foundry 托管模型 | Evaluation + Tracing + Red Teaming | 全面覆盖 |
 | Azure AI Foundry Agent | Evaluation + Red Teaming | 暂无内部 tracing 依赖 |
-| AI 应用（App Service / Function） | Evaluation + Red Teaming + App Insights | 需配置 response_id、model_name、model_version |
-| VM 中自建模型 | 红队外部调用（PyRIT） + APIM 身份捕获 | 不在 VM 内部做 tracing；APIM 为可选配置 |
+| RAG Service（知识检索问答服务） | Evaluation + Red Teaming + App Insights | 需配置 response_id、model_name、model_version |
+| VM 中自建模型 | 红队外部调用（PyRIT） + observability 组件留痕 | 不在 VM 内部做 Foundry tracing；由 VM API / runner 写入统一证据链 |
 
 **文本模型范围说明**：本领域仅覆盖文本类模型，不包括图像生成、视频、语音等多模态输出。
 
@@ -65,12 +65,12 @@
 |---|---|---|---|---|---|
 | Traceable Output Rate | donut | 是 | 已确认 | 已附带 response_id 或等效追踪标识的输出占比（仅 Azure 托管，VM 不计） | Application Insights（response_id 字段）、Azure AI Foundry Tracing |
 | Source Attribution Rate | donut | 是 | 已确认 | 输出中包含来源引用的比例（无 RAG 时显示 N/A） | Azure AI Foundry Evaluations、Azure AI Search 检索日志 |
-| Model Identity Capture Rate | donut / stacked bar | 是 | 已确认 | 已附带 model_name + model_version 的调用占比；按平台（Azure / VM via APIM）分拆 | Application Insights（model_name、model_version 字段）、Azure APIM 日志 |
+| Model Identity Capture Rate | donut / stacked bar | 是 | 已确认 | 已附带 model_name + model_version 的调用占比；按平台（Azure / VM）分拆 | Application Insights（model_name、model_version 字段）、Blob archive metadata |
 
 **数据来源**：
 - Application Insights：自定义属性 `response_id`、`model_name`、`model_version`（需要应用侧配置）
 - Azure AI Foundry Tracing：`GET /traces`
-- Azure API Management 日志：后端调用记录，含 VM 模型的 model_name、version
+- Blob archive metadata：保存 VM / App / runner 写入的 model_name、model_version、payload 引用
 
 **计算逻辑**：
 - Traceable Output Rate = 含 response_id 的 response 数 / Azure 托管模型 total response 数；VM 排除在外
@@ -80,7 +80,7 @@
 **约束说明**：
 - `Traceable Output Rate` 仅适用于 Azure 托管模型；VM 模型不统计此指标
 - `Source Attribution Rate` 当前无 RAG → 显示 N/A
-- `Model Identity Capture Rate` 依赖 App Insights 配置，VM 通过 APIM（可选配置；未配置时 VM 组显示 0%）
+- `Model Identity Capture Rate` 依赖 shared-observability 写入的 Python evidence、App Insights 索引字段和 Blob metadata；未接入的目标显示 0%
 
 ---
 
@@ -105,7 +105,7 @@
 **VM 模型 Red Teaming 策略**：
 - PyRIT 通过 VM 模型的 OpenAI-compatible REST 端点发起外部调用
 - 不需要在 VM 内安装任何 agent 或修改模型配置
-- 需要 VM 推理端点可从红队执行环境访问（可通过 APIM 或直接网络路由实现）
+- 需要 VM 推理端点可从红队执行环境访问（可通过直接网络路由实现）
 
 ---
 
@@ -138,7 +138,7 @@
 |---|---|---|
 | RAG 系统 | 当前无 | Groundedness / Source Attribution Rate 显示 N/A；RAG 就绪后自动生效 |
 | App Insights model_name / model_version 字段 | 尚未确认是否已配置 | 若支持，用户可增加配置；Model Identity Capture Rate 依赖此字段 |
-| VM 模型通过 APIM 暴露 | 可选配置 | 未配置时 VM 组 Model Identity Capture Rate 显示 0%；建议配置 |
+| VM 模型接入 shared-observability | 必需 | 未接入时 VM 组 Model Identity Capture Rate 显示 0%；必须补齐 Python evidence 与 Blob metadata |
 | PyRIT 结果存储 | 可设计 | 建议：PyRIT 执行后结果写入 Azure DevOps Work Items（tag: `red-team`） |
 | Disclosure scope | 未定义 | 4.4 目录完全后置，不展示 |
 
@@ -147,27 +147,27 @@
 ## 6. API 端点设计（开发参考）
 
 ```
-GET /api/metrics/domain4/evaluation-coverage
+GET /api/metrics/aigoverntrustworthy/evaluation-coverage
   → { by_target_type: [{type, total, evaluated, coverage_pct}], total_coverage_pct }
 
-GET /api/metrics/domain4/groundedness
+GET /api/metrics/aigoverntrustworthy/groundedness
   → { rate: null | float, n/a_reason: "no_rag" | null, sample_count: int }
 
-GET /api/metrics/domain4/safety-evaluator-failure
+GET /api/metrics/aigoverntrustworthy/safety-evaluator-failure
   → { failure_rate: float, failure_count: int, total_evaluated: int }
 
-GET /api/metrics/domain4/traceable-output-rate
+GET /api/metrics/aigoverntrustworthy/traceable-output-rate
   → { rate: float, traceable: int, total: int, scope: "azure_hosted_only" }
 
-GET /api/metrics/domain4/model-identity-capture
+GET /api/metrics/aigoverntrustworthy/model-identity-capture
   → { overall_rate: float, by_platform: [{platform, rate, captured, total}] }
 
-GET /api/metrics/domain4/red-teaming-coverage
+GET /api/metrics/aigoverntrustworthy/red-teaming-coverage
   → { by_target_type: [{type, total, red_teamed, coverage_pct}] }
 
-GET /api/metrics/domain4/attack-success-rate
+GET /api/metrics/aigoverntrustworthy/attack-success-rate
   → { by_target_type: [{type, success_rate, attacks, successes}] }
 
-GET /api/metrics/domain4/open-red-team-findings
+GET /api/metrics/aigoverntrustworthy/open-red-team-findings
   → { count: int, sparkline: [int] }
 ```

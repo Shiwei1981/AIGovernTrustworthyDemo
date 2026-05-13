@@ -24,7 +24,7 @@ from pathlib import Path
 _ENV_FILE = Path(__file__).resolve().parents[3] / ".env.local.L4"
 _KB_DIR = Path(__file__).resolve().parents[1] / "knowledge-base"
 
-_AOAI_ENDPOINT = "https://AIGovernTrustworthyAOAI.openai.azure.com/"
+_AOAI_ENDPOINT = "https://aigoverntrustworthyaoai.openai.azure.com/"
 _AOAI_API_VERSION = "2025-01-01-preview"
 
 

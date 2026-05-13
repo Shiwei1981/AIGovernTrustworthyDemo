@@ -573,7 +573,7 @@ L4_OBSERVABILITY_BLOB_PREFIX=aigoverntrustworthy
 
 # ── Azure OpenAI Service（Domain 4 专用，AIGovernTrustworthyAOAI）──────────────
 L4_AOAI_SERVICE_NAME=AIGovernTrustworthyAOAI
-L4_AOAI_ENDPOINT=<to-be-created>            # Portal 创建后填入，格式 https://AIGovernTrustworthyAOAI.openai.azure.com/
+L4_AOAI_ENDPOINT=https://aigoverntrustworthyaoai.openai.azure.com/
 
 # ── Azure AI Foundry ──────────────────────────────────────────────────────
 L4_AI_FOUNDRY_HUB_NAME=aigoverndemoaihub
