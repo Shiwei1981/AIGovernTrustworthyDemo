@@ -399,6 +399,17 @@ az storage container create \
 |---|---|
 | 资源名 | `AIGovernTrustworthyDemoAPIM` |
 | 资源组 | `AIGovernTrustworthyRG` |
+| SKU | Developer, stv2 |
+| 区域 | Canada East |
+| VNet 模式 | **Internal** ✅ |
+| 子网 | `subnet-APIM` (10.1.2.0/28) in `AIGovernCanadaEastVNET` |
+| Public IP | `40.86.204.28` (`AIGovernAPIM-pip`) |
+| Gateway URL | `https://aigoverntrustworthydemoapim.azure-api.net` |
+| Regional Gateway | `https://aigoverntrustworthydemoapim-canadaeast-01.regional.azure-api.net` |
+| Management URL | `https://aigoverntrustworthydemoapim.management.azure-api.net` |
+| Developer Portal | `https://aigoverntrustworthydemoapim.developer.azure-api.net` |
+| NSG | `nsg-subnet-APIM` (in `AIGovernDemoRG`), 含所有必需 APIM 规则 |
+| 状态 | ✅ **Succeeded，VNet Internal 配置完成，所有网络连接 healthy** |
 | 定位 | 所有可代理 HTTP hop 的统一 AI Gateway |
 | 能力 | Gateway tracing、backend diagnostics、与 App Insights 集成 |
 | 配置顺序 | 先连 App Insights，再配置 diagnostics，再逐步把可代理 endpoint 接到 APIM 后面 |
@@ -411,8 +422,8 @@ az storage container create \
 
 **建议配置顺序**：
 
-1. 创建 APIM 实例
-2. 连接现有 `APPLICATIONINSIGHTS_CONNECTION_STRING`
+1. ~~创建 APIM 实例~~ ✅ 已完成
+2. 连接现有 `APPLICATIONINSIGHTS_CONNECTION_STRING`（下一步）
 3. 开启 gateway / generative AI gateway diagnostics
 4. 配置 RAG / Tier 1 / Tier 2 / Foundry endpoint / VM endpoint 的 API 与 backend
 5. 再验证 trace 与 diagnostics 是否进入同一查询面
@@ -561,8 +572,10 @@ L4_OTEL_SERVICE_NAME_EVALUATION_RUNNER=AIGovernTrustworthyDemo.EvaluationRunner
 L4_OTEL_SERVICE_NAME_PYRIT_RUNNER=AIGovernTrustworthyDemo.PyRITRunner
 
 # ── API Management ───────────────────────────────────────────────────────
-L4_APIM_NAME=AIGovernTrustworthyDemoAPIM
-L4_APIM_GATEWAY_URL=<to-be-created>
+L4_APIM_SERVICE_NAME=AIGovernTrustworthyDemoAPIM
+L4_APIM_GATEWAY_URL=https://aigoverntrustworthydemoapim.azure-api.net
+L4_APIM_REGIONAL_GATEWAY_URL=https://aigoverntrustworthydemoapim-canadaeast-01.regional.azure-api.net
+L4_APIM_PUBLIC_IP=40.86.204.28
 L4_APIM_APP_INSIGHTS_LOGGER_NAME=applicationinsights
 
 # ── shared-observability ────────────────────────────────────────────────
@@ -641,7 +654,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | M1 | 资源组 | `AIGovernTrustworthyRG` | N/A | — | `AIGovernTrustworthyDemo-ResourceGroup` | `L4_RESOURCE_GROUP` | 已手动创建 |
 | M2 | Observability Blob Storage Account | `aigoverntrustworthysa` | `AIGovernTrustworthyRG` | Standard_LRS，canadaeast | `AIGovernTrustworthyDemo-ObservabilityBlob` | `L4_OBSERVABILITY_BLOB_STORAGE_ACCOUNT_NAME` | 已手动创建 |
 | M3 | Observability Blob Container | `ai-invocation-archive` | — | — | N/A | `L4_OBSERVABILITY_BLOB_CONTAINER` | 已手动创建 |
-| M4 | API Management | `AIGovernTrustworthyDemoAPIM` | `AIGovernTrustworthyRG` | Developer，canadaeast | `AIGovernTrustworthyDemo-APIM` | `L4_APIM_GATEWAY_URL` | 待创建 |
+| M4 | API Management | `AIGovernTrustworthyDemoAPIM` | `AIGovernTrustworthyRG` | Developer stv2，canadaeast，VNet Internal | `AIGovernTrustworthyDemo-APIM` | `L4_APIM_GATEWAY_URL` | ✅ 已创建，VNet Internal 配置完成 |
 | M5 | App Service Plan | `AIGovernTrustworthyDemoASP` | `AIGovernTrustworthyRG` | B2，Linux，canadaeast | `AIGovernTrustworthyDemo-AppServicePlan` | `L4_APP_SERVICE_PLAN_NAME` | 待创建 |
 | M6 | RAG Service Web App | `AIGovernTrustworthyDemoRAGService` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-RAGService` | `L4_RAG_SERVICE_URL` | 待创建 |
 | M7 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier1App` | `L4_TIER1_APP_URL` | 待创建 |
