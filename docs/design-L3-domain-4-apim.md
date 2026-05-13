@@ -1,0 +1,691 @@
+# Domain 4 · APIM 设计文档
+
+## 1. 文档定位
+
+本文档是 `design-L2-domain-4-prerequisites.md` §步骤1（观测基础设施）与 §2.4（统一观测设计）的 APIM 专项设计文档，记录：
+
+- APIM 在 Domain 4 治理架构中的定位与职责
+- 需要配置的每一个 API（含前端路径、后端目标、策略设计）
+- 观测/遥测配置
+- 认证方案
+- 当前实现状态与占位符
+
+**关联文档**：
+- `design-L2-domain-4-prerequisites.md` §2.4 — 统一观测设计
+- `design-L2-domain-4-prerequisites-lowleveldesign.md` §4.2.8 — APIM 资源属性
+- `infra/target-registry/targets.json` — 所有 Domain 4 受管目标清单
+
+---
+
+## 2. APIM 定位与职责
+
+### 2.1 在治理架构中的位置
+
+```
+外部调用者
+(Evaluation Runner / PyRIT / Tier1 / Tier2 / Dashboard)
+          │
+          ▼
+┌─────────────────────────────────────────────────────┐
+│              APIM (AIGovernTrustworthyDemoAPIM)     │
+│  VNet Internal · Canada East · Developer SKU stv2   │
+│                                                     │
+│  职责：                                              │
+│  ① 统一 AI Gateway — 所有可代理 HTTP hop 的入口      │
+│  ② Token 注入 — 向后端注入 MSI / SPN token          │
+│  ③ Tracing 中心 — 所有 hop 的 App Insights 日志     │
+│  ④ Governance 执行点 — 未来可添加限速/过滤/安全策略  │
+└─────────────────────────────────────────────────────┘
+          │ 按 path 路由到不同后端
+    ┌─────┼─────┬──────┬──────┬────────┬──────────┐
+    ▼     ▼     ▼      ▼      ▼        ▼          ▼
+Foundry AOAI  AOAI  Foundry DirectLine VM:11434  App
+Agent  Native FT    Custom  (Copilot)  (ollama)  Service
+(RAG)  Model  Model Agent
+```
+
+### 2.2 职责边界
+
+| 职责 | APIM 承担 | APIM 不承担 |
+|---|---|---|
+| HTTP 请求代理 | ✅ 所有外部可寻址的后端 | Foundry Agent 内部模型 hop |
+| Token 注入（MSI） | ✅ 向每个后端自动注入对应 scope token | 客户端侧的身份管理 |
+| App Insights tracing | ✅ gateway 请求/响应日志 + correlation | Foundry 内部 span（Foundry tracing 负责）|
+| Rate limiting | ✅ 可在此配置（当前未配置） | 客户端业务层限速 |
+| Request orchestration | ⚠️ 当前不做（各 API 都是 pass-through）| 跨 API 编排逻辑由调用方负责 |
+| TLS termination | ✅ 自动 | — |
+
+### 2.3 网络访问说明
+
+APIM 部署在 **Internal VNet 模式**，Gateway URL 只在 VNet 内部可达：
+
+| 端点类型 | URL | 可达范围 |
+|---|---|---|
+| Gateway（API 调用入口） | `https://aigoverntrustworthydemoapim.azure-api.net` | VNet 内部（subnet-APIM 所在 VNet）|
+| Regional Gateway | `https://aigoverntrustworthydemoapim-canadaeast-01.regional.azure-api.net` | VNet 内部 |
+| Management（ARM 配置） | `https://aigoverntrustworthydemoapim.management.azure-api.net` | 互联网（APIM 内部管理面）|
+| Developer Portal | `https://aigoverntrustworthydemoapim.developer.azure-api.net` | VNet 内部 |
+
+> **External 测试方案**：当前阶段测试脚本通过 ARM Management API 验证 APIM 配置（不需要网络可达），  
+> 并直连后端 API 做功能烟测。如需真实流量走 APIM，须从 VNet 内 VM 运行，或在 APIM 前加 Application Gateway。
+
+---
+
+## 3. APIM 实例属性（已配置）
+
+| 属性 | 值 |
+|---|---|
+| 资源名 | `AIGovernTrustworthyDemoAPIM` |
+| 资源组 | `AIGovernTrustworthyRG` |
+| SKU | `Developer`，`stv2` |
+| 区域 | `Canada East` |
+| 状态 | `Succeeded` ✅ |
+| VNet 模式 | `Internal` ✅ |
+| 子网 | `subnet-APIM` (10.1.2.0/28)，`AIGovernCanadaEastVNET` |
+| Private IP | `10.1.2.4` |
+| Public IP（Azure 自动分配） | `40.86.204.28` |
+| NSG | `nsg-subnet-APIM`（在 `AIGovernDemoRG`），含所有 APIM 必需规则 |
+| System-Assigned MSI | `32195307-0138-49c1-b36f-381928efcd5d` |
+| MSI RBAC | `Azure AI User` + `AzureML Data Scientist` on `aigovenaihubproject` ✅ |
+| App Insights Logger | `applicationinsights`（linked to `aiexvddh5zbxgtg`）✅ |
+| Gateway Diagnostics | 已启用，100% sampling，W3C correlation，verbosity=information ✅ |
+
+---
+
+## 4. 产品（Products）设计
+
+APIM Product 用于将多个 API 组合打包，并控制访问策略（subscription、rate limit 等）。
+
+| Product 名 | 用途 | 包含 API | Subscription 要求 | 状态 |
+|---|---|---|---|---|
+| `governance-eval` | Evaluation Runner、PyRIT Runner、smoke test 脚本使用 | 所有 API | 不需要（Entra token 即可） | ⬜ 待创建 |
+| `governance-internal` | Tier 1 / Tier 2 App Service 在 VNet 内调用使用 | `/rag`、`/native-model`、`/finetune-model`、`/foundry-agent` | 不需要（Entra token + VNet）| ⬜ 待创建 |
+
+> 当前阶段未创建 Product，API 直接开放（`subscriptionRequired: false`）。  
+> 正式治理场景下应启用 Product 并限制 subscription key 或 Entra 条件访问策略。
+
+---
+
+## 5. 前端 API 设计
+
+每个受管治理目标对应一个 APIM API。API 的 `path` 决定了 Gateway URL 上的访问路径。
+
+### 5.1 API 汇总表
+
+| API 名 | APIM 路径 | 后端目标类型 | 认证 scope | 实现状态 |
+|---|---|---|---|---|
+| `rag-service` | `/rag` | Foundry Agent（RAG） | `https://ml.azure.com` | ✅ 已配置 |
+| `native-model` | `/native-model` | AOAI gpt-5.4-nano | `https://cognitiveservices.azure.com` | ⬜ 待配置 |
+| `finetune-model` | `/finetune-model` | AOAI fine-tune deployment | `https://cognitiveservices.azure.com` | ⬜ 待配置（后端未就绪）|
+| `foundry-agent` | `/foundry-agent` | Foundry 自定义 Agent | `https://ml.azure.com` | ⬜ 待配置（Agent 未创建）|
+| `copilot-studio` | `/copilot-studio` | Direct Line（Copilot Studio） | DirectLine secret | ⬜ 待配置（Agent 未创建）|
+| `vm-model` | `/vm-model` | VM ollama API（phi3:mini） | 无（VNet 内访问）| ⬜ 待配置（VM 未创建）|
+| `tier1-app` | `/tier1` | Tier 1 Consumer App Service | `https://management.azure.com` | ⬜ 待配置（App 未部署）|
+| `tier2-app` | `/tier2` | Tier 2 Consumer App Service | `https://management.azure.com` | ⬜ 待配置（App 未部署）|
+
+### 5.2 API 前端配置规范（通用）
+
+每个 API 的前端配置遵循以下规范：
+
+```
+displayName:        见各 API 章节
+path:               见 5.1 汇总表
+protocols:          ["https"]
+subscriptionRequired: false（现阶段，后续 Product 配置后改为 true）
+apiType:            http
+```
+
+---
+
+## 6. 后端（Backend）设计
+
+### 6.1 后端汇总
+
+每个 API 对应一个 APIM Backend entity，负责记录实际目标地址。
+
+| Backend 名 | serviceUrl | 认证方式 | 状态 |
+|---|---|---|---|
+| `foundry-agent-rag` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject` | MSI，scope=`https://ml.azure.com` | ✅ serviceUrl 写在 API serviceUrl 字段 |
+| `aoai-native-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建 |
+| `aoai-finetune-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建（deployment 未就绪）|
+| `foundry-custom-agent` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject` | MSI，scope=`https://ml.azure.com` | ⬜ 待创建（Agent 未创建）|
+| `copilot-studio-directline` | `https://directline.botframework.com/v3/directline` | Named Value `copilot-directline-secret`（Header `Authorization: Bearer {secret}`）| ⬜ 待创建（Agent 未创建）|
+| `vm-ollama` | `http://<L4_VM_PRIVATE_IP>:11434` | 无 | ⬜ 待创建（VM 未创建）|
+| `tier1-app-service` | `https://aigoverntrustworthydemotier1app.azurewebsites.net` | Entra（透传客户端 token）| ⬜ 待创建（App 未部署）|
+| `tier2-app-service` | `https://aigoverntrustworthydemotier2app.azurewebsites.net` | Entra（透传客户端 token）| ⬜ 待创建（App 未部署）|
+
+> **注意**：APIM Internal VNet 模式下，`vm-ollama` 后端使用 VM 私有 IP，  
+> 需要 APIM 子网和 VM 子网之间的 VNet Peering 或同一 VNet 内可路由。
+
+### 6.2 MSI 认证说明
+
+APIM 对需要 Azure 身份的后端使用 System-Assigned MSI 自动获取 token：
+
+| 后端资源类型 | Token Scope | MSI 所需 RBAC |
+|---|---|---|
+| Foundry Agent API（ml.azure.com） | `https://ml.azure.com` | `Azure AI User` on `aigovenaihubproject` ✅ |
+| Azure OpenAI（AOAI chat completions） | `https://cognitiveservices.azure.com` | `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI` ⬜ |
+| App Service（Tier1/Tier2） | 透传客户端 token（不由 MSI 注入）| — |
+| Copilot Studio Direct Line | DirectLine secret（Named Value）| — |
+| VM ollama | 无 auth | — |
+
+**AOAI MSI RBAC 待创建**（等 native-model API 配置时同步添加）：
+```bash
+az role assignment create \
+  --assignee 32195307-0138-49c1-b36f-381928efcd5d \
+  --role "Cognitive Services OpenAI User" \
+  --scope /subscriptions/47da4b42-0493-49ff-b3c8-45df3ae06821/resourceGroups/AIGovernTrustworthyRG/providers/Microsoft.CognitiveServices/accounts/AIGovernTrustworthyAOAI
+```
+
+---
+
+## 7. API 详细设计
+
+### 7.1 `rag-service` — RAG 治理问答服务 ✅
+
+**状态**：已配置
+
+**前端**：
+```
+path:        /rag
+serviceUrl:  https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject
+```
+
+**Operations**：
+
+| Operation ID | 方法 | 路径模板 | 说明 |
+|---|---|---|---|
+| `threads` | POST | `/threads` | 创建对话 Thread |
+| `add-message` | POST | `/threads/{threadId}/messages` | 向 Thread 添加用户消息 |
+| `create-run` | POST | `/threads/{threadId}/runs` | 启动 Agent Run（含 `assistant_id`）|
+| `get-run` | GET | `/threads/{threadId}/runs/{runId}` | 轮询 Run 状态 |
+| `list-messages` | GET | `/threads/{threadId}/messages` | 获取 Thread 所有消息（含 citations）|
+
+**Inbound Policy**（API 级别）：
+```xml
+<policies>
+  <inbound>
+    <base />
+    <!-- 注入 APIM MSI token，scope=ml.azure.com -->
+    <authentication-managed-identity
+      resource="https://ml.azure.com"
+      output-token-variable-name="msi-token" />
+    <set-header name="Authorization" exists-action="override">
+      <value>@("Bearer " + (string)context.Variables["msi-token"])</value>
+    </set-header>
+    <!-- 注入 Foundry Agent API version -->
+    <set-query-parameter name="api-version" exists-action="override">
+      <value>2024-05-01-preview</value>
+    </set-query-parameter>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>
+```
+
+**调用示例**（从 VNet 内部）：
+```bash
+# 1. 创建 Thread
+POST https://aigoverntrustworthydemoapim.azure-api.net/rag/threads
+Content-Type: application/json
+{}
+
+# 2. 添加消息
+POST https://aigoverntrustworthydemoapim.azure-api.net/rag/threads/{threadId}/messages
+{"role": "user", "content": "What are the four core functions of NIST AI RMF?"}
+
+# 3. 启动 Run
+POST https://aigoverntrustworthydemoapim.azure-api.net/rag/threads/{threadId}/runs
+{"assistant_id": "asst_sFQ8LdzWZsExbdIYc8z2MkjV"}
+
+# 4. 轮询状态
+GET https://aigoverntrustworthydemoapim.azure-api.net/rag/threads/{threadId}/runs/{runId}
+
+# 5. 获取回答 + citations
+GET https://aigoverntrustworthydemoapim.azure-api.net/rag/threads/{threadId}/messages
+```
+
+---
+
+### 7.2 `native-model` — AOAI gpt-5.4-nano 原生模型 ⬜
+
+**状态**：待配置
+
+**前端**：
+```
+displayName:  Native Model (gpt-5.4-nano)
+path:         /native-model
+serviceUrl:   https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel
+```
+
+**Operations**：
+
+| Operation ID | 方法 | 路径模板 | 说明 |
+|---|---|---|---|
+| `chat-completions` | POST | `/chat/completions` | Chat completion 请求 |
+
+**Inbound Policy**（API 级别）：
+```xml
+<policies>
+  <inbound>
+    <base />
+    <!-- 注入 APIM MSI token，scope=cognitiveservices.azure.com -->
+    <authentication-managed-identity
+      resource="https://cognitiveservices.azure.com"
+      output-token-variable-name="msi-token" />
+    <set-header name="Authorization" exists-action="override">
+      <value>@("Bearer " + (string)context.Variables["msi-token"])</value>
+    </set-header>
+    <!-- 注入 AOAI API version -->
+    <set-query-parameter name="api-version" exists-action="override">
+      <value>2025-01-01-preview</value>
+    </set-query-parameter>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>
+```
+
+**前置条件**：
+- `AIGovernTrustworthyAOAI` AOAI 资源上 `disableLocalAuth=true` ✅ 已设置
+- APIM MSI 需要 `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI` ⬜
+
+**待配置**：
+```bash
+# 参考命令（创建 API + operation）
+az apim api create \
+  --service-name AIGovernTrustworthyDemoAPIM \
+  --resource-group AIGovernTrustworthyRG \
+  --api-id native-model \
+  --display-name "Native Model (gpt-5.4-nano)" \
+  --path native-model \
+  --protocols https \
+  --service-url "https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel" \
+  --subscription-required false
+```
+
+---
+
+### 7.3 `finetune-model` — AOAI Fine-tune 模型 ⬜
+
+**状态**：待配置（Fine-tune 部署未就绪）
+
+**前端**：
+```
+displayName:  Fine-tune Model (gpt-4o-mini)
+path:         /finetune-model
+serviceUrl:   https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel
+```
+
+**Operations**：与 `native-model` 相同（`POST /chat/completions`）
+
+**Inbound Policy**：与 `native-model` 相同（`cognitiveservices.azure.com` scope）
+
+**前置条件**：
+- Fine-tune 模型训练和部署完成（步骤 4）
+- `AIGovernTrustworthyDemoFineTuneModel` deployment 处于 `Succeeded`
+- `L4_FOUNDRY_FINETUNE_MODEL_ENDPOINT` 填入实际值
+
+---
+
+### 7.4 `foundry-agent` — Foundry 自定义 Agent ⬜
+
+**状态**：待配置（Agent 未创建）
+
+**前端**：
+```
+displayName:  Foundry Custom Agent
+path:         /foundry-agent
+serviceUrl:   https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject
+```
+
+**Operations**：与 `rag-service` 完全相同（Foundry Agent API 结构一致）
+
+**Inbound Policy**：与 `rag-service` 相同（`ml.azure.com` scope，`api-version=2024-05-01-preview`）
+
+> **区别**：客户端在 `create-run` 操作的请求体中传入不同的 `assistant_id`（自定义 Agent 的 ID）。  
+> APIM 不硬编码 agent_id，由调用方在请求体中指定。
+
+**前置条件**：
+- 自定义 Foundry Agent 在 `ai.azure.com` 中创建（步骤 7）
+- `L4_FOUNDRY_AGENT_ID` 填入实际值
+
+---
+
+### 7.5 `copilot-studio` — Copilot Studio Agent（Direct Line）⬜
+
+**状态**：待配置（Agent 未创建）
+
+**前端**：
+```
+displayName:  Copilot Studio Agent
+path:         /copilot-studio
+serviceUrl:   https://directline.botframework.com/v3/directline
+```
+
+**Operations**：
+
+| Operation ID | 方法 | 路径模板 | 说明 |
+|---|---|---|---|
+| `start-conversation` | POST | `/conversations` | 创建 Direct Line 对话 |
+| `send-activity` | POST | `/conversations/{conversationId}/activities` | 发送消息 |
+| `get-activities` | GET | `/conversations/{conversationId}/activities` | 获取回复 |
+
+**Inbound Policy**（API 级别）：
+```xml
+<policies>
+  <inbound>
+    <base />
+    <!-- Direct Line 使用 secret token，不用 MSI -->
+    <!-- DirectLine secret 存储在 APIM Named Value -->
+    <set-header name="Authorization" exists-action="override">
+      <value>@("Bearer " + context.Variables["copilot-directline-secret"])</value>
+    </set-header>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>
+```
+
+**Named Value 设计**：
+
+| Named Value 名 | 值 | 类型 |
+|---|---|---|
+| `copilot-directline-secret` | `<L4_COPILOT_DIRECTLINE_SECRET>` | Secret |
+
+**前置条件**：
+- Copilot Studio Agent 在 Power Platform 中创建（步骤 8）
+- Direct Line channel 已启用，secret 已获取 → 存入 APIM Named Value
+- `L4_COPILOT_BOT_ID`、`L4_COPILOT_DIRECTLINE_SECRET` 已填入 `.env.local.L4`
+
+> **注意**：Direct Line 认证不支持 MSI，必须使用 DirectLine secret 或 Token。  
+> APIM 需要保存 Named Value（Secret 类型），由 policy 在运行时注入。
+
+---
+
+### 7.6 `vm-model` — VM Hugging Face 模型（phi3:mini via ollama）⬜
+
+**状态**：待配置（VM 未创建）
+
+**前端**：
+```
+displayName:  VM Hugging Face Model (phi3:mini)
+path:         /vm-model
+serviceUrl:   http://<L4_VM_PRIVATE_IP>:11434
+```
+
+**Operations**：
+
+| Operation ID | 方法 | 路径模板 | 说明 |
+|---|---|---|---|
+| `chat-completions` | POST | `/v1/chat/completions` | ollama OpenAI-compatible chat |
+| `tags` | GET | `/api/tags` | 查询已加载模型列表（health check）|
+
+**Inbound Policy**（API 级别）：
+```xml
+<policies>
+  <inbound>
+    <base />
+    <!-- VM ollama 无认证，仅限 VNet 内访问 -->
+    <!-- 移除客户端携带的 Authorization header，避免 token 泄漏到 VM -->
+    <set-header name="Authorization" exists-action="delete" />
+    <!-- 注入 Governance 追踪 header -->
+    <set-header name="X-Governance-Target-Type" exists-action="override">
+      <value>vm_huggingface_model</value>
+    </set-header>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>
+```
+
+**网络前置条件**：
+- VM 所在子网与 APIM subnet-APIM 在同一 VNet，或 VNet 内可路由
+- NSG 允许 APIM subnet → VM subnet: 11434/TCP
+- `L4_VM_PRIVATE_IP` 已填入实际值
+
+---
+
+### 7.7 `tier1-app` — Tier 1 Consumer App Service ⬜
+
+**状态**：待配置（App 未部署）
+
+**前端**：
+```
+displayName:  Tier 1 Consumer App
+path:         /tier1
+serviceUrl:   https://aigoverntrustworthydemotier1app.azurewebsites.net
+```
+
+**Operations**：
+
+| Operation ID | 方法 | 路径模板 | 说明 |
+|---|---|---|---|
+| `ask` | POST | `/api/ask` | 主要问答入口（调用 RAG 或 native model）|
+| `health` | GET | `/api/health` | 健康检查 |
+
+> 实际 operations 根据 Tier 1 App 开发完成后的接口定义更新。
+
+**Inbound Policy**（API 级别）：
+```xml
+<policies>
+  <inbound>
+    <base />
+    <!-- Tier 1 App Service 使用 Entra 认证，透传客户端的 Bearer token -->
+    <!-- 不做 token 替换，由 App Service 内部验证客户端身份 -->
+    <!-- 追加 Governance trace header -->
+    <set-header name="X-Governance-Target-Type" exists-action="override">
+      <value>tier1_consumer</value>
+    </set-header>
+    <set-header name="X-Governance-Request-Id" exists-action="override">
+      <value>@(context.RequestId.ToString())</value>
+    </set-header>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>
+```
+
+**前置条件**：
+- `AIGovernTrustworthyDemoTier1App` App Service 已部署（步骤 9）
+- `L4_TIER1_APP_URL` 已填入实际值
+- App Service 配置了 Entra 认证（EasyAuth 或代码内校验）
+
+---
+
+### 7.8 `tier2-app` — Tier 2 Consumer App Service ⬜
+
+**状态**：待配置（App 未部署）
+
+**前端**：
+```
+displayName:  Tier 2 Consumer App
+path:         /tier2
+serviceUrl:   https://aigoverntrustworthydemotier2app.azurewebsites.net
+```
+
+**Operations**：根据 Tier 2 App 开发完成后的接口定义更新（占位）
+
+**Inbound Policy**（API 级别）：与 Tier 1 相同，`X-Governance-Target-Type: tier2_consumer`
+
+**前置条件**：Tier 1 App Service 先完成（步骤 9），Tier 2 App 在步骤 10 开发
+
+---
+
+## 8. 全局 Gateway Policy
+
+当前 APIM gateway-level policy 为默认（`<base />` pass-through）。
+
+**建议后续在 global policy 中添加**（未实施，仅设计）：
+
+```xml
+<policies>
+  <inbound>
+    <!-- 统一追加 APIM trace request ID -->
+    <set-header name="X-APIM-Request-Id" exists-action="override">
+      <value>@(context.RequestId.ToString())</value>
+    </set-header>
+    <base />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <!-- 统一在响应中返回 APIM Request ID，方便客户端关联 App Insights trace -->
+    <set-header name="X-APIM-Request-Id" exists-action="override">
+      <value>@(context.RequestId.ToString())</value>
+    </set-header>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
+```
+
+---
+
+## 9. 观测/遥测配置
+
+### 9.1 App Insights 集成（已配置）
+
+| 属性 | 值 |
+|---|---|
+| Logger 名 | `applicationinsights` |
+| App Insights 资源 | `aiexvddh5zbxgtg` |
+| Instrumentation Key | `01f866fb-...`（引用 `APPLICATIONINSIGHTS_CONNECTION_STRING`）|
+
+### 9.2 Gateway-level Diagnostics（已配置）
+
+| 属性 | 值 |
+|---|---|
+| 状态 | ✅ 已启用 |
+| Sampling | 100% |
+| Correlation Protocol | W3C |
+| Verbosity | information |
+| Log client IP | true |
+
+### 9.3 API-level Diagnostics（各 API 需单独配置）
+
+每个 API 在配置完成时同步启用 API-level App Insights diagnostics：
+
+| API | Diagnostics 状态 |
+|---|---|
+| `rag-service` | ✅ 已启用（100% sampling，W3C，information）|
+| `native-model` | ⬜ 待配置 |
+| `finetune-model` | ⬜ 待配置 |
+| `foundry-agent` | ⬜ 待配置 |
+| `copilot-studio` | ⬜ 待配置 |
+| `vm-model` | ⬜ 待配置 |
+| `tier1-app` | ⬜ 待配置 |
+| `tier2-app` | ⬜ 待配置 |
+
+**API-level Diagnostics 统一配置模板**（每个 API 创建时使用）：
+```json
+{
+  "properties": {
+    "loggerId": "/subscriptions/47da4b42.../providers/Microsoft.ApiManagement/service/AIGovernTrustworthyDemoAPIM/loggers/applicationinsights",
+    "alwaysLog": "allErrors",
+    "sampling": { "samplingType": "fixed", "percentage": 100 },
+    "verbosity": "information",
+    "httpCorrelationProtocol": "W3C",
+    "logClientIp": true
+  }
+}
+```
+
+### 9.4 Governance Trace 字段
+
+APIM 写入 App Insights 的请求/响应日志会自动包含：
+
+| 字段 | 来源 |
+|---|---|
+| `operation_Id` | W3C `traceparent` trace ID |
+| `id` | APIM request ID（`context.RequestId`）|
+| `url` | 请求 URL（含 API path）|
+| `responseCode` | HTTP 状态码 |
+| `duration` | 请求延迟（ms）|
+| API 名称、operation 名称 | APIM 自动记录 |
+
+**自定义 Governance 字段**（通过 `X-Governance-*` header + App Insights customDimensions）：
+
+| Header | 说明 | 由谁设置 |
+|---|---|---|
+| `X-Governance-Target-Type` | 目标对象类型（`rag_service` 等）| APIM inbound policy |
+| `X-Governance-Request-Id` | 透传 APIM RequestId | APIM inbound policy |
+| `X-Governance-Trace-Id` | 透传 W3C trace ID | 客户端或 APIM 自动 |
+
+---
+
+## 10. Named Values 设计
+
+Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
+
+| Named Value 名 | 值 | 类型 | 用途 | 状态 |
+|---|---|---|---|---|
+| `foundry-api-version` | `2024-05-01-preview` | Plain | Foundry Agent API version | ⬜ 待创建（当前硬编码在 policy 中）|
+| `aoai-api-version` | `2025-01-01-preview` | Plain | AOAI API version | ⬜ 待创建 |
+| `copilot-directline-secret` | `<L4_COPILOT_DIRECTLINE_SECRET>` | Secret | Copilot Studio Direct Line token | ⬜ 待创建（Bot 创建后）|
+| `rag-agent-id` | `asst_sFQ8LdzWZsExbdIYc8z2MkjV` | Plain | RAG Agent ID（可选，当前 policy 不需要）| ⬜ 可选 |
+
+---
+
+## 11. 依赖关系与配置顺序
+
+```
+已完成 ──────────────────────────────────────────────────────────
+ ✅ APIM 实例创建（VNet Internal、NSG、Succeeded）
+ ✅ App Insights logger + gateway diagnostics
+ ✅ APIM MSI 启用（Azure AI User + AzureML Data Scientist）
+ ✅ rag-service API + operations + policy + diagnostics
+
+等 AOAI 相关步骤就绪（步骤 3、4）──────────────────────────────
+ ⬜ APIM MSI → Cognitive Services OpenAI User on AIGovernTrustworthyAOAI
+ ⬜ native-model API 配置
+ ⬜ finetune-model API 配置（步骤 4 完成后）
+
+等 Foundry 步骤就绪（步骤 7）───────────────────────────────────
+ ⬜ foundry-agent API 配置
+
+等 Copilot Studio 步骤就绪（步骤 8）────────────────────────────
+ ⬜ Named Value: copilot-directline-secret
+ ⬜ copilot-studio API 配置
+
+等 VM 步骤就绪（步骤 5）────────────────────────────────────────
+ ⬜ vm-model API 配置（填入 L4_VM_PRIVATE_IP）
+ ⬜ NSG 规则：subnet-APIM → VM subnet: 11434/TCP
+
+等 App Service 步骤就绪（步骤 9、10）───────────────────────────
+ ⬜ tier1-app API 配置
+ ⬜ tier2-app API 配置
+```
+
+---
+
+## 12. 实现状态汇总
+
+| 类别 | 项目 | 状态 |
+|---|---|---|
+| **实例** | APIM 创建、VNet Internal、NSG | ✅ 完成 |
+| **实例** | MSI 启用 + RBAC（Foundry）| ✅ 完成 |
+| **实例** | MSI RBAC（AOAI）| ⬜ 待添加 |
+| **观测** | App Insights logger | ✅ 完成 |
+| **观测** | Gateway-level diagnostics | ✅ 完成 |
+| **API** | `rag-service` + policy + diagnostics | ✅ 完成 |
+| **API** | `native-model` | ⬜ 待配置 |
+| **API** | `finetune-model` | ⬜ 待配置（后端未就绪）|
+| **API** | `foundry-agent` | ⬜ 待配置（Agent 未创建）|
+| **API** | `copilot-studio` | ⬜ 待配置（Agent 未创建）|
+| **API** | `vm-model` | ⬜ 待配置（VM 未创建）|
+| **API** | `tier1-app` | ⬜ 待配置（App 未部署）|
+| **API** | `tier2-app` | ⬜ 待配置（App 未部署）|
+| **产品** | Products 设计 | ⬜ 待创建（当前 `subscriptionRequired: false`）|
+| **Named Values** | API version constants | ⬜ 待创建（当前 policy 内硬编码）|
+| **Named Values** | DirectLine secret | ⬜ 待创建（Bot 创建后）|
+| **Global Policy** | X-APIM-Request-Id header | ⬜ 待实施 |
+| **测试** | `test_via_apim.py` | ✅ 完成（rag-service 验证）|
