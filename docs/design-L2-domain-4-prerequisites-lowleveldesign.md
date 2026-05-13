@@ -17,7 +17,7 @@
 - Azure AI Foundry Hub / Project：**复用现有实例**，不新建
   - Hub：`aigoverndemoaihub`（AIGovernDemoRG）
   - Project：`aigovenaihubproject`（AIGovernDemoRG）
-- **Azure OpenAI Service（Domain 4 专用）**：**新建 `AIGovernTrustworthyAOAI`**（`AIGovernTrustworthyRG`），用于 RAG Agent / 模型部署，与旧资源 `contosoaigovdemo` 解耦；连接到 Foundry Project 后 Agent 可在 `ai.azure.com` 可见
+- **Azure OpenAI Service（Domain 4 专用）**：**新建 `AIGovernTrustworthyAOAI`**（`AIGovernTrustworthyRG`），用于 RAG Agent / 模型部署，归入 Domain 4 专属资源组；连接到 Foundry Project 后 Agent 可在 `ai.azure.com` 可见
 - App Insights：**复用现有实例**（`APPLICATIONINSIGHTS_CONNECTION_STRING`），不新建
 - App Service Plan：**新建 `AIGovernTrustworthyDemoASP`**，由用户在 Portal 手动创建
 - API Management：**新建 `AIGovernTrustworthyDemoAPIM`**，作为所有可代理 HTTP hop 的统一入口与 tracing 网关
@@ -216,7 +216,7 @@ az role assignment create \
 
 #### 4.2.3 Azure OpenAI Service（Domain 4 专用）
 
-> **待创建（用户 Portal 操作）**：新建专属于 Domain 4 的 Azure OpenAI 资源，与旧资源 `contosoaigovdemo`（AOAIRG）完全解耦，归入 `AIGovernTrustworthyRG`，并作为 Connection 接入 Foundry Project，使 RAG Agent 在 `ai.azure.com` 可见管理。
+> **待创建（用户 Portal 操作）**：新建专属于 Domain 4 的 Azure OpenAI 资源，归入 `AIGovernTrustworthyRG`，并作为 Connection 接入 Foundry Project，使 RAG Agent 在 `ai.azure.com` 可见管理。
 
 | 属性 | 值 |
 |---|---|
@@ -232,7 +232,7 @@ az role assignment create \
 
 | Deployment 名 | 模型 | 用途 |
 |---|---|---|
-| `AIGovernTrustworthyDemoNativeModel` | `gpt-5-nano`（或 GPT-4.1-nano） | RAG Agent / Native Model（步骤 2、3） |
+| `AIGovernTrustworthyDemoNativeModel` | `gpt-5.4-nano` | RAG Agent / Native Model（步骤 2、3） |
 | `AIGovernTrustworthyDemoFineTuneModel` | Fine-tune 结果 | Fine-tune 部署（步骤 5） |
 
 **📋 Portal 操作步骤**：
@@ -240,7 +240,7 @@ az role assignment create \
 2. 创建后，在资源 Overview 记录 Endpoint URL → 填入 `L4_AOAI_ENDPOINT`
 3. 将此资源作为 **Connection** 添加到 Foundry Hub `aigoverndemoaihub`：
    - Portal → AI Foundry Hub → Settings → Connected Resources → Add → Azure OpenAI → 选 `AIGovernTrustworthyAOAI`
-4. 在该 AOAI 资源下，创建 model deployment `AIGovernTrustworthyDemoNativeModel`（gpt-5-nano）
+4. 在该 AOAI 资源下，创建 model deployment `AIGovernTrustworthyDemoNativeModel`（gpt-5.4-nano）
 
 ---
 
@@ -326,7 +326,7 @@ az storage container create --account-name aigoverntrustworthydemostorage --name
 | 内容来源 | NIST AI RMF、NIST AI 600-1 |
 | 生成方式 | 由脚本调用 GPT-5.4 自动生成问答对 |
 | 故意错误条数 | 10 条（同主题，答案有误）；用于演示 Red Teaming 检测效果 |
-| Fine-tune 目标模型 | Azure AI Foundry 上的公开基础模型（如 `gpt-5-nano`，以实际可用为准）|
+| Fine-tune 目标模型 | Azure AI Foundry 上的公开基础模型（如 `gpt-5.4-nano`，以实际可用为准）|
 | 部署后 API 格式 | 与基础模型一致（OpenAI chat completion 格式） |
 | 训练文件路径 | `aigoverntrustworthydemo-finetune/aigoverntrustworthydemo-qa-210.jsonl`（上传到 `aigoverntrustworthydemostorage`） |
 
@@ -695,7 +695,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | # | 决策内容 | 涉及步骤 | 状态 |
 |---|---|---|---|
 | S1 | AI Search 索引 schema 已确认：8 字段 + 1536 维向量，3 类内容（standard/news/product_solution），Embedding 用 text-embedding-3-small | 步骤 2（RAG Service） | ✅ 已确认 |
-| S2 | Fine-tune：JSONL chat completion 格式，210 条（200 正确 + 10 故意错误），来源 NIST AI RMF + NIST AI 600-1，目标模型 gpt-5-nano 或同类可用模型 | 步骤 4（fine-tune 模型） | ✅ 已确认 |
+| S2 | Fine-tune：JSONL chat completion 格式，210 条（200 正确 + 10 故意错误），来源 NIST AI RMF + NIST AI 600-1，目标模型 gpt-5.4-nano 或同类可用模型 | 步骤 4（fine-tune 模型） | ✅ 已确认 |
 | S3 | VM CPU-only，Standard_D4s_v3，使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF，~2.2GB），通过 ollama 暴露 OpenAI 兼容 API | 步骤 5（VM 模型） | ✅ 已确认 |
 | S4 | Observability Blob archive 全新建设，由用户手动创建，当前已创建（`aigoverntrustworthysa` + `ai-invocation-archive`） | 步骤 1（基础设施） | ✅ 已确认 |
 | S5 | App Insights 复用现有实例（`APPLICATIONINSIGHTS_CONNECTION_STRING`） | 步骤 1（基础设施） | ✅ 已确认 |

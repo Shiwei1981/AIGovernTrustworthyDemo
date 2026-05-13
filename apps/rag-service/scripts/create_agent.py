@@ -2,7 +2,7 @@
 create_agent.py — 创建 RAG Governance Service 的 Azure OpenAI Assistant with File Search。
 
 使用 AzureOpenAI 客户端 + Entra 令牌（RAG Service SPN），直接调用 Azure OpenAI Assistants API。
-contosoaigovdemo 资源禁用了 API Key（disableLocalAuth=true），须使用 Entra token。
+使用 AIGovernTrustworthyAOAI（AIGovernTrustworthyRG）。
 
 运行方式：
     cd apps/rag-service
@@ -23,7 +23,7 @@ from pathlib import Path
 
 _ENV_FILE = Path(__file__).resolve().parents[3] / ".env.local.L4"
 
-_AOAI_ENDPOINT = "https://contosoaigovdemo.openai.azure.com/"
+_AOAI_ENDPOINT = "https://AIGovernTrustworthyAOAI.openai.azure.com/"
 _AOAI_API_VERSION = "2025-01-01-preview"
 
 

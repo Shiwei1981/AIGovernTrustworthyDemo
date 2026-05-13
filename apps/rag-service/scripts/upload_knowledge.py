@@ -3,7 +3,7 @@ upload_knowledge.py — 上传 knowledge-base/ 下所有 PDF 到 Azure OpenAI ve
 并将 vector store 绑定到 RAG Assistant。
 
 使用 AzureOpenAI 客户端 + Entra 令牌（RAG Service SPN）。
-contosoaigovdemo 资源禁用了 API Key（disableLocalAuth=true），须使用 Entra token。
+使用 AIGovernTrustworthyAOAI（AIGovernTrustworthyRG）。
 
 运行方式：
     cd apps/rag-service
@@ -24,7 +24,7 @@ from pathlib import Path
 _ENV_FILE = Path(__file__).resolve().parents[3] / ".env.local.L4"
 _KB_DIR = Path(__file__).resolve().parents[1] / "knowledge-base"
 
-_AOAI_ENDPOINT = "https://contosoaigovdemo.openai.azure.com/"
+_AOAI_ENDPOINT = "https://AIGovernTrustworthyAOAI.openai.azure.com/"
 _AOAI_API_VERSION = "2025-01-01-preview"
 
 
