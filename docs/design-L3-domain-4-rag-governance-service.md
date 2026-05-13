@@ -313,23 +313,25 @@ APIM backend → L4_AI_FOUNDRY_PROJECT_ENDPOINT
 
 步骤 2 相关环境变量（来自 `.env.local.L4`）：
 
-| 变量名 | 用途 |
+| 变量名 | 值 / 用途 |
 |---|---|
 | `L4_RAG_SERVICE_CLIENT_ID` | 调用 Foundry Agent 的运行时 SPN Client ID |
 | `L4_RAG_SERVICE_CLIENT_SECRET` | 运行时 SPN Secret |
 | `AZURE_TENANT_ID` | 租户 ID |
-| `L4_AI_FOUNDRY_PROJECT_ENDPOINT` | Foundry Project endpoint（用于 Foundry SDK 调用） |
-| `L4_AI_FOUNDRY_PROJECT_NAME` | `aigovenaihubproject` |
-| `L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT` | RAG Agent 绑定的 LLM deployment 名 |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | App Insights 连接串（用于验证 tracing 可查询） |
+| `L4_RAG_AGENT_ID` | `asst_sFQ8LdzWZsExbdIYc8z2MkjV`（Agent776，已确认） |
+| `L4_RAG_VECTOR_STORE_ID` | `vs_oq4SujIx2VVD2F3atnX3XpHm`（status: completed，5 files） |
+| `L4_FOUNDRY_AGENT_BASE_URL` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/{sub}/resourceGroups/AIGovernDemoRG/providers/Microsoft.MachineLearningServices/workspaces/aigovenaihubproject` |
 | `L4_APIM_GATEWAY_URL` | APIM gateway URL（RAG endpoint 经 APIM 暴露后的地址） |
 | `L4_RAG_SERVICE_URL` | RAG Service 最终对外 URL（经 APIM，填入后供其他步骤使用） |
-| `L4_RAG_AGENT_ID` | `asst_sFQ8LdzWZsExbdIYc8z2MkjV`（已通过 ai.azure.com Portal 创建，名 Agent776） |
+
+> **Agent 架构说明（实际验证）**：Foundry Agent 存储于 Foundry 命名空间（非 AOAI Assistants）。  
+> API 访问须使用 **Foundry Agent REST 路径**（即 `L4_FOUNDRY_AGENT_BASE_URL`），token scope = `https://ml.azure.com`，  
+> **不能**使用 `https://aigoverntrustworthyaoai.openai.azure.com/openai/assistants/...`（返回 404）。  
+> `AIGovernTrustworthyAOAI` 的 AOAI Assistants 列表中另有一个脚本遗留的 `asst_rzetHmGXcOebswEMu4XIERpk`（无 vector store），可忽略或删除。
 
 > **Agent 创建方式（实际执行记录）**：Foundry Agent 通过 `ai.azure.com` Portal 手动创建，  
 > 使用 `AIGovernTrustworthyAOAI` 资源下的 `gpt-4o`（deployment `AIGovernTrustworthyDemoNativeModelgpt4o`），  
-> File Search 已启用，5 个 PDF 已通过 Portal 上传。  
-> Agent ID `asst_sFQ8LdzWZsExbdIYc8z2MkjV` 已写入 `.env.local.L4`。
+> File Search 已启用，5 个 PDF 已通过 Portal 上传，Vector Store `vs_oq4SujIx2VVD2F3atnX3XpHm` 状态 completed。
 
 ---
 

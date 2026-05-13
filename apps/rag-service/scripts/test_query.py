@@ -1,8 +1,8 @@
 """
-test_query.py — 直连 Azure OpenAI Assistant（RAG Agent），验证问答与 citation 返回。
+test_query.py — 调用 Foundry Agent（RAG），验证问答与 citation 返回。
 
-不经过 APIM，直接调用 Azure OpenAI Assistants API（Entra token 认证）。
-用于本地开发验证（实施顺序步骤 5）。
+Agent 由 ai.azure.com Portal 创建，存储在 Foundry 命名空间（非 AOAI Assistants），
+必须通过 Foundry Agent REST API（token scope: https://ml.azure.com）访问。
 
 运行方式：
     cd apps/rag-service
@@ -11,7 +11,8 @@ test_query.py — 直连 Azure OpenAI Assistant（RAG Agent），验证问答与
 
 前置条件：
     - L4_RAG_AGENT_ID 已填入 .env.local.L4
-    - Azure OpenAI endpoint 可访问（RAG SPN 持有 Cognitive Services OpenAI Contributor）
+    - L4_FOUNDRY_AGENT_BASE_URL 已填入 .env.local.L4
+    - RAG SPN 对 Foundry Project 有读权限（Cognitive Services OpenAI Contributor）
 """
 
 from __future__ import annotations
@@ -21,9 +22,11 @@ import sys
 import time
 from pathlib import Path
 
+import requests
+
 _ENV_FILE = Path(__file__).resolve().parents[3] / ".env.local.L4"
-_AOAI_ENDPOINT = "https://aigoverntrustworthyaoai.openai.azure.com/"
-_AOAI_API_VERSION = "2025-01-01-preview"
+_API_VERSION = "2024-05-01-preview"
+_TOKEN_SCOPE = "https://ml.azure.com/.default"
 
 _DEFAULT_QUESTIONS = [
     "What are the four core functions of the NIST AI Risk Management Framework?",
@@ -49,7 +52,6 @@ def _load_env(path: Path) -> None:
 _load_env(_ENV_FILE)
 
 from azure.identity import ClientSecretCredential  # noqa: E402
-from openai import AzureOpenAI  # noqa: E402
 
 
 def _require(name: str) -> str:
@@ -60,44 +62,94 @@ def _require(name: str) -> str:
     return value
 
 
-def ask(client: AzureOpenAI, agent_id: str, question: str) -> dict:
+class FoundryAgentClient:
+    """Minimal REST client for Foundry Agent (Assistants-compatible API)."""
+
+    def __init__(self, base_url: str, token_fn):
+        self.base = base_url.rstrip("/")
+        self._token_fn = token_fn
+
+    def _headers(self) -> dict:
+        return {
+            "Authorization": f"Bearer {self._token_fn()}",
+            "Content-Type": "application/json",
+        }
+
+    def _url(self, path: str) -> str:
+        return f"{self.base}/{path.lstrip('/')}?api-version={_API_VERSION}"
+
+    def create_thread(self) -> str:
+        r = requests.post(self._url("threads"), headers=self._headers(), json={})
+        r.raise_for_status()
+        return r.json()["id"]
+
+    def add_message(self, thread_id: str, content: str) -> None:
+        r = requests.post(
+            self._url(f"threads/{thread_id}/messages"),
+            headers=self._headers(),
+            json={"role": "user", "content": content},
+        )
+        r.raise_for_status()
+
+    def create_run(self, thread_id: str, assistant_id: str) -> str:
+        r = requests.post(
+            self._url(f"threads/{thread_id}/runs"),
+            headers=self._headers(),
+            json={"assistant_id": assistant_id},
+        )
+        r.raise_for_status()
+        return r.json()["id"]
+
+    def get_run(self, thread_id: str, run_id: str) -> dict:
+        r = requests.get(
+            self._url(f"threads/{thread_id}/runs/{run_id}"),
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def list_messages(self, thread_id: str) -> list:
+        r = requests.get(
+            self._url(f"threads/{thread_id}/messages"),
+            headers=self._headers(),
+        )
+        r.raise_for_status()
+        return r.json().get("data", [])
+
+
+def ask(client: FoundryAgentClient, agent_id: str, question: str) -> dict:
     """Send one question to the agent and return answer + citations."""
-    thread = client.beta.threads.create()
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=question,
-    )
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=agent_id,
-    )
+    thread_id = client.create_thread()
+    client.add_message(thread_id, question)
+    run_id = client.create_run(thread_id, agent_id)
 
     for _ in range(60):
         time.sleep(5)
-        run = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-        if run.status in ("completed", "failed", "cancelled", "expired"):
+        run = client.get_run(thread_id, run_id)
+        if run["status"] in ("completed", "failed", "cancelled", "expired"):
             break
 
-    if run.status != "completed":
-        return {"status": run.status, "answer": None, "citations": []}
+    if run["status"] != "completed":
+        return {"status": run["status"], "answer": None, "citations": []}
 
-    messages = client.beta.threads.messages.list(thread_id=thread.id)
-    for msg in messages.data:
-        if msg.role == "assistant":
-            for block in msg.content:
-                if hasattr(block, "text"):
+    messages = client.list_messages(thread_id)
+    for msg in messages:
+        if msg["role"] == "assistant":
+            for block in msg.get("content", []):
+                if block.get("type") == "text":
+                    text_val = block["text"]["value"]
+                    annotations = block["text"].get("annotations", [])
                     citations = [
                         {
-                            "file_id": ann.file_citation.file_id,
-                            "text": ann.text[:80] if ann.text else "",
+                            "file_id": ann.get("file_citation", {}).get("file_id", ""),
+                            "text": ann.get("text", "")[:80],
                         }
-                        for ann in block.text.annotations
-                        if hasattr(ann, "file_citation")
+                        for ann in annotations
+                        if ann.get("type") == "file_citation"
                     ]
                     return {
                         "status": "completed",
-                        "answer": block.text.value,
+                        "answer": text_val,
                         "citations": citations,
                     }
     return {"status": "completed", "answer": "(no assistant message)", "citations": []}
@@ -105,6 +157,7 @@ def ask(client: AzureOpenAI, agent_id: str, question: str) -> dict:
 
 def main() -> None:
     agent_id = _require("L4_RAG_AGENT_ID")
+    base_url = _require("L4_FOUNDRY_AGENT_BASE_URL")
     tenant_id = _require("AZURE_TENANT_ID")
     client_id = _require("L4_RAG_SERVICE_CLIENT_ID")
     client_secret = _require("L4_RAG_SERVICE_CLIENT_SECRET")
@@ -116,23 +169,26 @@ def main() -> None:
         client_id=client_id,
         client_secret=client_secret,
     )
-    client = AzureOpenAI(
-        azure_endpoint=_AOAI_ENDPOINT,
-        api_version=_AOAI_API_VERSION,
-        azure_ad_token_provider=lambda: credential.get_token(
-            "https://cognitiveservices.azure.com/.default"
-        ).token,
+    client = FoundryAgentClient(
+        base_url=base_url,
+        token_fn=lambda: credential.get_token(_TOKEN_SCOPE).token,
     )
 
-    print(f"[INFO] Agent ID : {agent_id}")
-    print(f"[INFO] Questions: {len(questions)}\n")
+    print(f"[INFO] Foundry Agent Base : {base_url}")
+    print(f"[INFO] Agent ID           : {agent_id}")
+    print(f"[INFO] Questions          : {len(questions)}\n")
 
     all_passed = True
     for i, q in enumerate(questions, 1):
         print(f"{'='*60}")
         print(f"Q{i}: {q}")
         print(f"{'='*60}")
-        result = ask(client, agent_id, q)
+        try:
+            result = ask(client, agent_id, q)
+        except requests.HTTPError as exc:
+            print(f"[FAIL] HTTP error: {exc}")
+            all_passed = False
+            continue
 
         if result["status"] != "completed":
             print(f"[FAIL] Run ended with status: {result['status']}")
