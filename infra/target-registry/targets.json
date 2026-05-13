@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "description": "Domain 4 AI Governance Trustworthy Demo — target registry. Lists every governed AI target with its identity, endpoint, and type for use by evaluation runners, red teaming, and the dashboard metric collector.",
+  "targets": [
+    {
+      "target_id": "AIGovernTrustworthyDemoNativeModel",
+      "target_type": "foundry_native_model",
+      "display_name": "Foundry Native Model (gpt-5.4-nano)",
+      "model_name": "gpt-5.4-nano",
+      "model_version": "2026-03-17",
+      "aoai_resource": "AIGovernTrustworthyAOAI",
+      "deployment_name": "AIGovernTrustworthyDemoNativeModel",
+      "endpoint": "https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel/chat/completions?api-version=2025-01-01-preview",
+      "apim_path": "<to-be-configured>",
+      "auth": "entra",
+      "status": "active",
+      "notes": "Step 3. Direct AOAI endpoint verified 2026-05-13. APIM proxy path TBD after APIM VNet config completes."
+    },
+    {
+      "target_id": "asst_sFQ8LdzWZsExbdIYc8z2MkjV",
+      "target_type": "rag_service",
+      "display_name": "RAG Governance Service (Agent776)",
+      "model_name": "gpt-4o",
+      "model_version": "2024-11-20",
+      "aoai_resource": "AIGovernTrustworthyAOAI",
+      "deployment_name": "AIGovernTrustworthyDemoNativeModelgpt4o",
+      "agent_id": "asst_sFQ8LdzWZsExbdIYc8z2MkjV",
+      "agent_name": "Agent776",
+      "vector_store_id": "vs_oq4SujIx2VVD2F3atnX3XpHm",
+      "foundry_agent_base_url": "https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42-0493-49ff-b3c8-45df3ae06821/resourceGroups/AIGovernDemoRG/providers/Microsoft.MachineLearningServices/workspaces/aigovenaihubproject",
+      "endpoint": "<to-be-configured-via-apim>",
+      "apim_path": "<to-be-configured>",
+      "auth": "entra",
+      "token_scope": "https://ml.azure.com",
+      "status": "active",
+      "notes": "Step 2. Foundry Agent with File Search. 5 PDFs (AI Governance standards). Vector store completed. Direct Foundry API verified 2026-05-13. APIM proxy path TBD."
+    },
+    {
+      "target_id": "AIGovernTrustworthyDemoFineTuneModel",
+      "target_type": "foundry_finetune_model",
+      "display_name": "Foundry Fine-tune Model (gpt-4o-mini)",
+      "model_name": "gpt-4o-mini",
+      "model_version": "<to-be-created>",
+      "deployment_name": "AIGovernTrustworthyDemoFineTuneModel",
+      "endpoint": "<to-be-created>",
+      "apim_path": "<to-be-configured>",
+      "auth": "entra",
+      "status": "pending",
+      "notes": "Step 4. Fine-tune job not yet created."
+    },
+    {
+      "target_id": "AIGovernTrustworthyDemoFoundryAgent",
+      "target_type": "foundry_agent",
+      "display_name": "Foundry Custom Agent",
+      "model_name": "<to-be-selected>",
+      "model_version": "<to-be-created>",
+      "endpoint": "<to-be-created>",
+      "apim_path": "<to-be-configured>",
+      "auth": "entra",
+      "status": "pending",
+      "notes": "Step 7. Custom Foundry Agent (not the RAG agent). Not yet created."
+    },
+    {
+      "target_id": "AIGovernTrustworthyDemoCopilotStudioAgent",
+      "target_type": "copilot_studio_agent",
+      "display_name": "Copilot Studio Agent",
+      "bot_id": "<to-be-created>",
+      "environment_id": "<to-be-confirmed>",
+      "directline_endpoint": "https://directline.botframework.com/v3/directline",
+      "apim_path": "<to-be-configured>",
+      "auth": "directline_secret",
+      "status": "pending",
+      "notes": "Step 8. Copilot Studio Agent not yet created."
+    },
+    {
+      "target_id": "AIGovernTrustworthyDemoVM",
+      "target_type": "vm_huggingface_model",
+      "display_name": "VM Hugging Face Model (phi3:mini)",
+      "model_name": "phi3:mini",
+      "model_version": "<to-be-confirmed>",
+      "vm_name": "AIGovernTrustworthyDemoVM",
+      "vm_private_ip": "<to-be-created>",
+      "api_port": 11434,
+      "endpoint": "<to-be-created>",
+      "apim_path": "<to-be-configured>",
+      "auth": "none",
+      "status": "pending",
+      "notes": "Step 5. VM not yet provisioned."
+    },
+    {
+      "target_id": "AIGovernTrustworthyDemoTier1App",
+      "target_type": "tier1_consumer",
+      "display_name": "Tier 1 Consumer App",
+      "app_service_name": "AIGovernTrustworthyDemoTier1App",
+      "endpoint": "<to-be-deployed>",
+      "apim_path": "<to-be-configured>",
+      "auth": "entra",
+      "status": "pending",
+      "notes": "Step 9. App Service not yet created."
+    },
+    {
+      "target_id": "AIGovernTrustworthyDemoTier2App",
+      "target_type": "tier2_consumer",
+      "display_name": "Tier 2 Consumer App",
+      "app_service_name": "AIGovernTrustworthyDemoTier2App",
+      "endpoint": "<to-be-deployed>",
+      "apim_path": "<to-be-configured>",
+      "auth": "entra",
+      "status": "pending",
+      "notes": "Step 10. App Service not yet created."
+    }
+  ]
+}
