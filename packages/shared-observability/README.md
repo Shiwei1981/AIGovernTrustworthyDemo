@@ -46,6 +46,25 @@ shared-observability 在当前设计中不是 tracing backbone，也不负责统
 - Blob 中保存完整原文，App Insights 中只保存索引字段和 blob 引用
 - 统一关联优先使用 `trace_id`、`response_id`、`archive_id`、`payload_ref`
 
+## TargetType 值说明
+
+`target_type` 描述**被调用的下游组件类型**，不是调用方自身。调用 `log_llm_call()` 时，问自己"我调用了什么"来选择正确的值。
+
+| 值 | 含义 | 典型记录方 |
+|---|---|---|
+| `rag_service` | RAG 服务 API | 调用 RAG 的上游 App；或 RAG 服务自身记录内部 LLM 调用 |
+| `foundry_native_model` | Azure AI Foundry 托管的基础/对话模型（标准部署） | 直接调用模型的 App 或脚本 |
+| `foundry_finetune_model` | Azure AI Foundry 托管的 fine-tune 模型 | 直接调用模型的 App 或脚本 |
+| `foundry_agent` | Azure AI Foundry Agent API | 调用 Agent 的上游 App |
+| `copilot_studio_agent` | Microsoft Copilot Studio Agent 端点 | 调用 Agent 的上游 App |
+| `vm_huggingface_model` | VM 上部署的 Hugging Face 模型 REST API | 直接调用模型的 App 或脚本 |
+| `tier1_consumer` | Tier 1 Consumer App API（被测目标） | 评估 runner 或测试脚本 |
+| `tier2_consumer` | Tier 2 Consumer App API（被测目标） | 评估 runner 或测试脚本 |
+
+**分层记录原则**：每一层只记录自己发出的那次调用，`tier1_consumer` / `tier2_consumer` 留给"把消费者应用本身作为测试目标"的场景（通常是评估 runner 驱动）。
+
+详细规范见 `schema.py` 中 `TargetType` 的 docstring。
+
 ## 定制化扩展原则
 
 不同应用可以附加自己的扩展字段，但必须保留统一基础字段：

@@ -11,6 +11,67 @@ TelemetryScalar = str | int | float | bool | None
 
 
 class TargetType(StrEnum):
+    """Discriminator that identifies *what kind of AI component* was called.
+
+    Used as the ``target_type`` argument to ``log_llm_call()`` and stored in
+    Blob evidence metadata + App Insights event attribute ``aigov.target.type``.
+
+    **Choosing the right value**
+
+    The value describes the *downstream target*, not the caller.  Ask:
+    "What did I call?" and pick accordingly.
+
+    Recording party examples
+    ------------------------
+    * A Tier 1 App calls the RAG service API → ``RAG_SERVICE``
+    * The RAG service calls Azure OpenAI (Foundry native model) → ``FOUNDRY_NATIVE_MODEL``
+    * A Tier 1 App calls a Foundry Agent API → ``FOUNDRY_AGENT``
+    * An evaluation runner calls a Tier 1 Consumer App API → ``TIER1_CONSUMER``
+    * An evaluation runner calls a Tier 2 Consumer App API → ``TIER2_CONSUMER``
+
+    Layered recording note
+    ----------------------
+    When a Tier 1 App calls the RAG service, *two* evidence records are written:
+
+    1. Tier 1 App records: ``target_type=RAG_SERVICE``, its own ``service_name``.
+    2. RAG service records: ``target_type=FOUNDRY_NATIVE_MODEL``, its own ``service_name``.
+
+    Both records share the same ``trace_id``, enabling full call-chain reconstruction
+    in App Insights.
+
+    Value catalogue
+    ---------------
+    ``rag_service``
+        A RAG (Retrieval-Augmented Generation) service API endpoint.
+        Used when any caller (App, eval runner) invokes a RAG API.
+        Also used by the RAG service *itself* when logging its internal LLM call
+        if no more specific ``foundry_*`` value applies at the RAG layer.
+
+    ``foundry_native_model``
+        Direct call to an Azure AI Foundry–hosted base or chat-completion model
+        (no fine-tuning; standard deployment).
+
+    ``foundry_finetune_model``
+        Direct call to an Azure AI Foundry–hosted fine-tuned model deployment.
+
+    ``foundry_agent``
+        Call to an Azure AI Foundry Agent API (``/agents/...``).
+
+    ``copilot_studio_agent``
+        Call to a Microsoft Copilot Studio published agent endpoint.
+
+    ``vm_huggingface_model``
+        Call to a Hugging Face model served on an Azure VM (custom REST endpoint).
+
+    ``tier1_consumer``
+        The recording party is calling a **Tier 1 Consumer Application** as the
+        target under test.  Typically used by evaluation runners or test scripts
+        that drive the consumer app and want to archive the request/response pair.
+
+    ``tier2_consumer``
+        Same as ``tier1_consumer`` but for a **Tier 2 Consumer Application**.
+    """
+
     RAG_SERVICE = "rag_service"
     FOUNDRY_NATIVE_MODEL = "foundry_native_model"
     FOUNDRY_FINETUNE_MODEL = "foundry_finetune_model"
