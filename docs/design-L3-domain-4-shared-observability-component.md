@@ -112,7 +112,7 @@ shared-observability 不再被设计为“统一 tracing 平台”或“自定�
 
 **记录的语义是**：这一层 Python 代码向 Agent / RAG 发出了一次请求，并拿到了一个响应。不是重复记录 Agent 或 RAG 内部的 LLM 调用（那些由被调用的服务自己记录）。
 
-> **与 RAG 服务自身记录的关系**：RAG 服务内部调用 LLM 时，RAG 服务自己也会用 `log_llm_call()` 写一条 `target_type=rag_service` 的 evidence。调用方写的那条同样是 `target_type=rag_service`，但 `service_name` 不同（前者是 Tier1 App 名，后者是 RAG 服务名）。查询时可用 `service_name` 区分哪一层写的。
+> **与 RAG 服务自身记录的关系**：RAG 服务内部调用 LLM 时，RAG 服务自己也会用 `log_llm_call()` 写一条 `target_type=rag_service` 的 evidence。调用方写的那条同样是 `target_type=rag_service`，但 `source_type` 不同（调用方填自己的类型，如 `tier1_consumer`；RAG 服务自身填 `rag_service`），`service_name` 也不同。查询时可用 `aigov.source.type` 或 `service_name` 区分哪一层写的。
 
 #### R-005 查询主面统一在 Application Insights
 
@@ -291,7 +291,8 @@ log_llm_call(
     settings: ObservabilitySettings,
     credential: TokenCredential,          # 由调用方传入，见 5.2.1
     service_name: str,
-    target_type: str,
+    target_type: str,                     # TargetType 枚举值，描述下游组件类型
+    source_type: str | None = None,       # SourceType 枚举值，描述当前记录方类型（可选）
     target_id: str,
     target_endpoint: str,
     llm_input: object,
@@ -566,6 +567,7 @@ credential = ClientSecretCredential(
 - `aigov.payload.ref`
 - `aigov.target.type`
 - `aigov.target.id`
+- `aigov.source.type`
 - `status`
 
 推荐错误字段：
@@ -578,7 +580,7 @@ credential = ClientSecretCredential(
 本设计使用以下命名规则：
 
 1. 平台已有语义优先：`trace_id`、`span_id`、`gen_ai.response.id`、`server.address`。
-2. 仅在平台没有语义时使用 `aigov.*` 扩展：`aigov.archive.id`、`aigov.payload.ref`、`aigov.target.type`、`aigov.target.id`。
+2. 仅在平台没有语义时使用 `aigov.*` 扩展：`aigov.archive.id`、`aigov.payload.ref`、`aigov.target.type`、`aigov.target.id`、`aigov.source.type`。
 3. 不新增 `correlation_id`、`invocation_context_id`、`graph_node_id` 等业务自定义链路键。
 
 ## 8. 查询与关联设计
@@ -627,10 +629,24 @@ customEvents
 customEvents
 | where name == "AIGovernTrustworthyLLMEvidence"
 | extend target_type = tostring(customDimensions["aigov.target.type"])
+| extend source_type = tostring(customDimensions["aigov.source.type"])
 | extend service_name = tostring(customDimensions["service.name"])
 | extend status = tostring(customDimensions.status)
-| summarize count() by target_type, service_name, status
+| summarize count() by source_type, target_type, service_name, status
 | order by count_ desc
+```
+
+查询特定调用边（如所有 Tier1 App → RAG 服务的调用）：
+
+```kusto
+customEvents
+| where name == "AIGovernTrustworthyLLMEvidence"
+| extend source_type = tostring(customDimensions["aigov.source.type"])
+| extend target_type = tostring(customDimensions["aigov.target.type"])
+| where source_type == "tier1_consumer" and target_type == "rag_service"
+| extend trace_id = tostring(customDimensions.trace_id)
+| extend payload_ref = tostring(customDimensions["aigov.payload.ref"])
+| project timestamp, trace_id, source_type, target_type, payload_ref, customDimensions
 ```
 
 `aigov.target.type` 可能的值及含义：

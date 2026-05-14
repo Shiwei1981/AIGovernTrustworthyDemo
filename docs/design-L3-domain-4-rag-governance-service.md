@@ -215,6 +215,7 @@ shared_observability.log_llm_call(...)
 |---|---|
 | `service_name` | `AIGovernTrustworthyDemo.RAGService` |
 | `target_type` | `rag_service` |
+| `source_type` | `rag_service`（RAG 服务自身是记录方） |
 | `target_id` | `AIGovernTrustworthyDemoRAGService` |
 | `response_id` | 模型 response id |
 | `model_name` / `model_version` | 实际模型部署与版本 |
@@ -228,8 +229,8 @@ shared_observability.log_llm_call(...)
 |---|---|---|
 | APIM gateway diagnostics | APIM | HTTP hop、状态码、延迟、W3C correlation |
 | Web App telemetry | RAG Web App | 请求日志、异常日志、应用级 trace |
-| shared-observability Blob evidence（RAG 服务内部） | RAG Web App 代码 | LLM input / output / error 完整证据；`target_type=rag_service`，`service_name=AIGovernTrustworthyDemo.RAGService` |
-| shared-observability Blob evidence（调用方侧，可选） | 上游 App（如 Tier1 App） | 调用 RAG API 的请求 / 响应证据；`target_type=rag_service`，`service_name` 为上游 App 名 |
+| shared-observability Blob evidence（RAG 服务内部） | RAG Web App 代码 | LLM input / output / error 完整证据；`target_type=rag_service`，`source_type=rag_service`，`service_name=AIGovernTrustworthyDemo.RAGService` |
+| shared-observability Blob evidence（调用方侧，可选） | 上游 App（如 Tier1 App） | 调用 RAG API 的请求 / 响应证据；`target_type=rag_service`，`source_type=tier1_consumer`，`service_name` 为上游 App 名 |
 | App Insights 统一查询 | Azure Monitor | APIM + Web App + evidence thin event 聚合 |
 
 ### 6.5 调用方（上游 App）记录 RAG API 调用的规范
@@ -240,6 +241,7 @@ shared_observability.log_llm_call(...)
 |---|---|
 | `service_name` | 调用方自己的服务名（如 `AIGovernTrustworthyDemo.Tier1App`） |
 | `target_type` | `"rag_service"` |
+| `source_type` | `"tier1_consumer"`（若调用方是 Tier1 App）或 `"evaluation_runner"`（若是评估 runner） |
 | `target_id` | `"AIGovernTrustworthyDemoRAGService"` |
 | `target_endpoint` | RAG API 的实际 URL（经 APIM 或直连） |
 | `llm_input` | 发给 RAG 的请求体，如 `{"input": "..."}` |
@@ -262,6 +264,7 @@ rag_response = call_rag_api(rag_request)   # 实际调用
 log_llm_call(
     service_name="AIGovernTrustworthyDemo.Tier1App",
     target_type="rag_service",
+    source_type="tier1_consumer",
     target_id="AIGovernTrustworthyDemoRAGService",
     target_endpoint=RAG_API_URL,
     llm_input=rag_request,

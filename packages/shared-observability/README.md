@@ -65,6 +65,24 @@ shared-observability 在当前设计中不是 tracing backbone，也不负责统
 
 详细规范见 `schema.py` 中 `TargetType` 的 docstring。
 
+## SourceType 值说明
+
+`source_type` 描述**当前记录方自身的类型**，不是被调用的下游。调用 `log_llm_call()` 时，问自己"我是什么"来选择正确的值。`source_type` 为可选参数；省略时只有 `service_name`（字符串）标识调用方。
+
+| 值 | 含义 | 典型场景 |
+|---|---|---|
+| `tier1_consumer` | Tier 1 Consumer App 是记录方 | Tier1 App 调用 RAG、Agent 或 LLM 时 |
+| `tier2_consumer` | Tier 2 Consumer App 是记录方 | Tier2 App 调用下游 AI 服务时 |
+| `rag_service` | RAG 服务自身是记录方 | RAG 服务记录内部 LLM 调用 |
+| `foundry_agent` | Foundry Agent 自身是记录方 | Agent 记录内部 LLM 调用（如可访问） |
+| `copilot_studio_agent` | Copilot Studio Agent 是记录方 | Agent 侧记录 |
+| `evaluation_runner` | 自动化评估 / 治理 runner 是记录方 | Runner 驱动消费者 App 测试时 |
+| `test_script` | 独立测试脚本是记录方 | 集成测试、手动 curl 测试 |
+
+`source_type` + `target_type` 组合描述调用图中的一条有向边，例如 `tier1_consumer → rag_service` 可直接在 KQL 中按两个字段过滤，无需解析 `service_name` 字符串。
+
+详细规范见 `schema.py` 中 `SourceType` 的 docstring。
+
 ## 定制化扩展原则
 
 不同应用可以附加自己的扩展字段，但必须保留统一基础字段：
