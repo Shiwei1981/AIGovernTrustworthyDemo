@@ -14,14 +14,16 @@
 - 所有 Domain 4 新建资源统一放入新资源组 `AIGovernTrustworthyRG`
 - Tenant / Subscription 沿用现有：`7d3389c6-5b33-43be-b0fd-d7c303755fb5` / `47da4b42-0493-49ff-b3c8-45df3ae06821`
 - Location 沿用 `canadaeast`
-- Azure AI Foundry Hub / Project：**复用现有实例**，不新建
+- Azure AI Foundry Hub / Project（旧 AzureML workspace 后端）：**保留复用**，用于既有 Foundry 资源、模型治理与非 RAG Web App 场景
   - Hub：`aigoverndemoaihub`（AIGovernDemoRG）
   - Project：`aigovenaihubproject`（AIGovernDemoRG）
-- **Azure OpenAI Service（Domain 4 专用）**：**新建 `AIGovernTrustworthyAOAI`**（`AIGovernTrustworthyRG`），用于 RAG Agent / 模型部署，归入 Domain 4 专属资源组；连接到 Foundry Project 后 Agent 可在 `ai.azure.com` 可见
+- Microsoft Foundry Account / Project（新后端）：步骤 2 **不再作为 RAG 主路径依赖**；如后续其他步骤需要，再单独设计
+- **Azure OpenAI Service（Domain 4 专用）**：**新建 `AIGovernTrustworthyAOAI`**（`AIGovernTrustworthyRG`），用于原生模型 / fine-tune / 兼容性验证；RAG Web App 直接调用其模型 deployment
 - App Insights：**复用现有实例**（`APPLICATIONINSIGHTS_CONNECTION_STRING`），不新建
-- App Service Plan：**新建 `AIGovernTrustworthyDemoASP`**，由用户在 Portal 手动创建
+- App Service Plan：**复用现有 `AIGovernDemoASP`**，不再新建 Domain 4 专用 Plan
 - API Management：**新建 `AIGovernTrustworthyDemoAPIM`**，作为所有可代理 HTTP hop 的统一入口与 tracing 网关
-- Azure Web App（RAG Service / Tier1 / Tier2）：由用户在 Portal 手动创建
+- Azure Web App（RAG / Tier1 / Tier2）：由用户在 Portal 手动创建；RAG Service 使用 Web App `AIGovernTrustworthyRAGApp`
+- Azure Container Registry：步骤 2 当前方案不依赖
 - Observability Blob Archive：新建专用 Storage Account + Container，用于统一保存 AI 调用的完整 input / output / metadata
 - 所有关键参数名（SPN 名、App 名等）写入 `.env.local.L4`，用户可手动修改
 - 所有新建 Azure 资源必须附加以下 Tag：
@@ -69,7 +71,8 @@ az group create \
 | `Contributor` | `AIGovernTrustworthyRG` | 创建和管理所有 Domain 4 资源 |
 | `User Access Administrator` | `AIGovernTrustworthyRG` | 为新 SPN 分配 RBAC 角色 |
 | `Cognitive Services Contributor` | `AIGovernTrustworthyRG` | 创建 Azure OpenAI / AI Foundry 资源 |
-| `Azure AI Developer` | `AIGovernTrustworthyRG` | 管理 AI Foundry Hub / Project / Agent |
+| `Azure AI Project Manager` | `AIGovernTrustworthyRG` / Foundry Project | 用于未来 Foundry Project / Agent 管理场景；不再是步骤 2 的前置 |
+| `Azure AI Owner` | RAG Foundry Account / Project（按需） | 创建 Foundry project / agent resources 与调试期间的数据面管理 |
 | `Search Service Contributor` | `AIGovernTrustworthyRG` | 创建和管理 Azure AI Search |
 | `Storage Blob Data Contributor` | `AIGovernTrustworthyRG` | 上传 fine-tune 训练数据和 RAG 文档 |
 
@@ -92,23 +95,21 @@ az role assignment create \
 
 部署使用现有 SPN `AZ_DEPLOY_CLIENT_ID`。所有应用程序的运行时身份都单独新建，不共用一个运行时 SPN。所有会写统一 AI 调用证据链的运行时身份，都必须具备 observability Blob archive 的写入权限。所有新增 SPN 统一加入 `aigoverndemogroup`，统一使用 client secret 认证；应用对象与对应 service principal 统一写入标签 `AI:SPN`、`Owner:ITBob@MngEnvMCAP029189.onmicrosoft.com`。
 
-#### 3.2.1 RAG Service 运行时 SPN
+#### 3.2.1 RAG Service 运行时 SPN（primary）
 
 | 属性 | 值 |
 |---|---|
 | 建议显示名 | `AIGovernTrustworthyDemoRAGServiceSPN` |
-| 用途 | RAG Service 运行时身份 |
+| 用途 | RAG Web App 运行时身份（调用 AOAI、写 Blob evidence、写 App Insights） |
 | 环境变量 | `L4_RAG_SERVICE_CLIENT_ID` / `L4_RAG_SERVICE_CLIENT_SECRET` |
 
 | 权限 | 作用域 | 原因 |
 |---|---|---|
-| `Cognitive Services OpenAI User` | AI Foundry / Azure OpenAI resource | 调用 OpenAI / Foundry 推理 API |
-| `Azure AI User` | AI Foundry Project | 调用 Foundry Agent、fine-tune endpoint |
-| `Search Index Data Reader` | AI Search resource | RAG 检索 |
-| `Search Index Data Contributor` | AI Search resource | 写入索引（ingestion） |
+| `Cognitive Services OpenAI User` | Azure OpenAI resource | Web App 调用推理 API |
 | `Monitoring Metrics Publisher` | `AIGovernTrustworthyRG` | 写入 App Insights 自定义事件 |
-| `Storage Blob Data Reader` | Storage Account | 读取文档与训练数据 |
 | `Storage Blob Data Contributor` | Observability Blob Storage Account | 写入 AI 调用归档 |
+
+> **当前结论**：`AIGovernTrustworthyDemoRAGServiceSPN` 是当前 RAG Web App 的首选运行时身份，不再作为 Hosted Agent fallback。
 
 #### 3.2.2 Tier 1 App 运行时 SPN
 
@@ -173,12 +174,12 @@ az role assignment create \
 
 | 资源 | 名称 / 端点 | 用途 | 环境变量 |
 |---|---|---|---|
-| AI Foundry Hub | `aigoverndemoaihub` | Foundry 工作区（Hub） | `L4_AI_FOUNDRY_HUB_NAME` |
-| AI Foundry Project | `aigovenaihubproject` | RAG 生成、Evaluation、Agent | `L4_AI_FOUNDRY_PROJECT_NAME` |
+| AI Foundry Hub（旧） | `aigoverndemoaihub` | 既有 Foundry / AzureML workspace 资源 | `L4_AI_FOUNDRY_HUB_NAME` |
+| AI Foundry Project（旧） | `aigovenaihubproject` | 既有 Foundry 资源；不作为当前 RAG Web App 的运行后端 | `L4_AI_FOUNDRY_PROJECT_NAME` |
 | Application Insights | `appinsights` | 复用连接串（不在 L4 创建独立实例） | `APPLICATIONINSIGHTS_CONNECTION_STRING` |
 | Log Analytics Workspace | `aiexvddh5zbxgtg` | 复用诊断日志汇集目标 | `LOG_ANALYTICS_WORKSPACE_NAME` |
-| App Service Plan（现有，非 Domain 4） | `AIGovernDemoASP`（canadaeast，B3） | 现有 AIGovernApp 使用，不用于 Domain 4 | `AZ_APP_SERVICE_PLAN` |
-| ACR | `AIGovernDemoACR`（`aigoverndemoacr.azurecr.io`） | 容器镜像存储（按需复用） | `PROD_ACR_LOGIN_SERVER` |
+| App Service Plan（现有，复用） | `AIGovernDemoASP`（canadaeast，B3） | 当前步骤 2 的 RAG Web App 直接复用 | `L4_APP_SERVICE_PLAN_NAME` |
+| ACR | `AIGovernDemoACR`（`aigoverndemoacr.azurecr.io`） | 当前步骤 2 不依赖 | `PROD_ACR_LOGIN_SERVER` |
 
 ---
 
@@ -196,9 +197,9 @@ az role assignment create \
 
 ---
 
-#### 4.2.2 Azure AI Foundry Hub + Project
+#### 4.2.2 Azure AI Foundry Hub + Project（旧后端，复用）
 
-> **✅ 已确认**：复用现有实例，已通过 SPN 查询到以下资源，信息已填入 `.env.local.L4`。
+> **✅ 已确认**：复用现有实例，已通过 SPN 查询到以下资源，信息已填入 `.env.local.L4`。该 Project endpoint 供既有 Foundry 场景使用，不作为当前 RAG Web App 的运行后端。
 
 | 属性 | 值 |
 |---|---|
@@ -210,13 +211,37 @@ az role assignment create \
 | Project Endpoint | `https://0ccc5150-37cd-4136-8f18-02728d0b38b7.workspace.eastus2.api.azureml.ms` |
 | MLflow URI | `azureml://0ccc5150-37cd-4136-8f18-02728d0b38b7.workspace.eastus2.api.azureml.ms/mlflow/v1.0/.../AIGovernDemoRG/.../aigovenaihubproject` |
 
-> 📋 **用户操作**：在 [ai.azure.com](https://ai.azure.com) → Project Overview 确认 endpoint URL 格式，如有差异更新 `L4_AI_FOUNDRY_PROJECT_ENDPOINT`。
+> **用途边界**：保留给步骤 3 / 4 / 7 的既有 Foundry 资源。当前步骤 2 的 RAG Web App 不依赖下一节的新后端 Foundry Account / Project。
+
+---
+
+#### 4.2.2A Azure Web App（RAG Service）
+
+> **当前选定方案**：步骤 2 使用 Azure Web App `AIGovernTrustworthyRAGApp`，部署到**现有** App Service Plan `AIGovernDemoASP`。不再使用 Hosted Agent、ACR、Foundry vector store 作为默认路径。
+
+| 属性 | 值 |
+|---|---|
+| Web App 名称 | `AIGovernTrustworthyRAGApp` |
+| 资源组 | `AIGovernTrustworthyRG` |
+| App Service Plan | `AIGovernDemoASP`（复用，资源组 `AIGovernDemoRG`） |
+| Runtime | Python 3.11 |
+| 对外入口 | 通过 APIM `/rag` 统一暴露 |
+| 直接站点 URL | `https://AIGovernTrustworthyRAGApp.azurewebsites.net` |
+| 运行时身份 | `L4_RAG_SERVICE_CLIENT_ID` / `L4_RAG_SERVICE_CLIENT_SECRET` |
+| 环境变量 | `L4_RAG_APP_NAME`、`L4_RAG_APP_URL`、`L4_APP_SERVICE_PLAN_NAME` |
+
+**实现原则**：
+
+- PDF 知识材料随应用部署，或在启动时从受控目录读取。
+- 应用内完成 PDF 解析、文本切块、轻量级检索和模型调用。
+- 默认不创建 embedding、vector store、Azure AI Search 或额外检索云资源。
+- 如后续需要新增 embedding / vector 资源，先暂停并征得用户同意。
 
 ---
 
 #### 4.2.3 Azure OpenAI Service（Domain 4 专用）
 
-> **待创建（用户 Portal 操作）**：新建专属于 Domain 4 的 Azure OpenAI 资源，归入 `AIGovernTrustworthyRG`，并作为 Connection 接入 Foundry Project，使 RAG Agent 在 `ai.azure.com` 可见管理。
+> **待创建（用户 Portal 操作）**：新建专属于 Domain 4 的 Azure OpenAI 资源，归入 `AIGovernTrustworthyRG`。RAG Web App 直接调用该资源中的模型 deployment；该 AOAI 资源也用于原生模型、fine-tune 和兼容性验证。
 
 | 属性 | 值 |
 |---|---|
@@ -232,7 +257,7 @@ az role assignment create \
 
 | Deployment 名 | 模型 | 用途 |
 |---|---|---|
-| `AIGovernTrustworthyDemoNativeModel` | `gpt-5.4-nano` | RAG Agent / Native Model（步骤 2、3） |
+| `AIGovernTrustworthyDemoNativeModel` | `gpt-5.4-nano` | Native Model（步骤 3）；同时作为 RAG Web App 默认生成模型 |
 | `AIGovernTrustworthyDemoFineTuneModel` | Fine-tune 结果 | Fine-tune 部署（步骤 5） |
 
 **📋 Portal 操作步骤**：
@@ -244,7 +269,9 @@ az role assignment create \
 
 ---
 
-#### 4.2.4 Azure AI Search（RAG Service 使用）
+#### 4.2.4 Azure AI Search（RAG fallback，可选）
+
+> **状态调整**：RAG 主路径改为应用内代码式检索，不再以 Azure AI Search 作为必须资源。以下设计仅保留为 fallback：当内存检索在规模、相关性或管理性上不足时，再经用户确认启用。
 
 | 属性 | 值 |
 |---|---|
@@ -260,11 +287,11 @@ az search service create \
   --location canadaeast \
   --sku Basic \
   --tags AI=AIGovernTrustworthyDemo-RAGSearch Owner=weishi@MngEnvMCAP029189.onmicrosoft.com
-# 记录 admin key → L4_AI_SEARCH_ADMIN_KEY
-# 记录 endpoint → L4_AI_SEARCH_ENDPOINT
+# fallback 才需要记录 admin key → L4_AI_SEARCH_ADMIN_KEY
+# fallback 才需要记录 endpoint → L4_AI_SEARCH_ENDPOINT
 ```
 
-> **✅ 已确认（S1）**：最简 POC schema，面向 AI Security / AI Governance 文档检索场景。Embedding 模型使用 Azure OpenAI `text-embedding-3-small`（维度 1536）。
+> **S1 调整**：该 schema 仍可作为 Azure AI Search fallback 的最简 POC schema；当前 Web App 主路径不依赖它。
 
 #### AI Search 索引 Schema（`aigoverntrustworthydemo-rag-index`）
 
@@ -288,7 +315,7 @@ az search service create \
 | `news` | AI Security 新闻（RSS / Bing News API） | 定期拉取摘要 → ingestion 脚本 |
 | `product_solution` | Microsoft Defender for AI、Azure AI Content Safety、Purview AI Hub、合作伙伴方案 | 官方文档页面抓取 → ingestion 脚本 |
 
-**Embedding 变量**：`L4_EMBEDDING_MODEL_DEPLOYMENT=text-embedding-3-small`（使用现有 OPENAI_ENDPOINT）
+**Embedding 变量（fallback）**：`L4_EMBEDDING_MODEL_DEPLOYMENT=text-embedding-3-small`（仅在用户批准启用 embedding 方案时使用）
 
 ---
 
@@ -430,17 +457,17 @@ az storage container create \
 
 ---
 
-#### 4.2.9 App Service Plan + Web Apps（RAG Service / Tier 1 / Tier 2）
+#### 4.2.9 App Service Plan + Web Apps（RAG / Tier 1 / Tier 2）
 
-> **✅ 已确认（S6）**：新建 Domain 4 专用 App Service Plan，**由用户在 Portal 手动创建**。Web App 也由用户手动创建。
+> **✅ 已确认（S6，已调整）**：复用现有 App Service Plan `AIGovernDemoASP`。步骤 2 创建 RAG Web App；步骤 9 / 10 的 Tier 1 / Tier 2 也可按需继续复用该 Plan。
 
 **App Service Plan**：
 
 | 属性 | 值 |
 |---|---|
-| Plan 名称 | `AIGovernTrustworthyDemoASP` |
-| 资源组 | `AIGovernTrustworthyRG` |
-| SKU | `B2`（2 vCPU，3.5GB；POC 够用） |
+| Plan 名称 | `AIGovernDemoASP` |
+| 资源组 | `AIGovernDemoRG` |
+| SKU | `B3`（现有） |
 | OS | Linux |
 | Location | `canadaeast` |
 
@@ -448,14 +475,14 @@ az storage container create \
 
 | App | 建议资源名 | 环境变量 | Observability Profile | 运行身份 |
 |---|---|---|---|---|
-| RAG Service | `AIGovernTrustworthyDemoRAGService` | `L4_RAG_SERVICE_APP_NAME` | `AIGovernTrustworthyDemo.RAGService` | `L4_RAG_SERVICE_CLIENT_ID` |
+| RAG Service | `AIGovernTrustworthyRAGApp` | `L4_RAG_APP_NAME` | `AIGovernTrustworthyDemo.RAGService` | `L4_RAG_SERVICE_CLIENT_ID` |
 | Tier 1 Consumer App | `AIGovernTrustworthyDemoTier1App` | `L4_TIER1_APP_NAME` | `AIGovernTrustworthyDemo.Tier1App` | `L4_TIER1_APP_CLIENT_ID` |
 | Tier 2 Consumer App | `AIGovernTrustworthyDemoTier2App` | `L4_TIER2_APP_NAME` | `AIGovernTrustworthyDemo.Tier2App` | `L4_TIER2_APP_CLIENT_ID` |
 
 **📋 用户操作步骤**：
-1. Portal → App Service Plans → 创建 → 资源组 `AIGovernTrustworthyRG`，名称 `AIGovernTrustworthyDemoASP`，SKU B2，Linux
-2. Portal → App Services → 分别创建 3 个 Web App，选择 Plan `AIGovernTrustworthyDemoASP`，Runtime Python 3.11
-3. 创建后将实际 URL 填入 `.env.local.L4` 的 `L4_RAG_SERVICE_URL`、`L4_TIER1_APP_URL`、`L4_TIER2_APP_URL`
+1. Portal → App Services → 创建 RAG Web App `AIGovernTrustworthyRAGApp`，选择现有 Plan `AIGovernDemoASP`，Runtime Python 3.11
+2. Portal → App Services → 后续分别创建 Tier 1 / Tier 2 两个 Web App，继续选择 Plan `AIGovernDemoASP`
+3. 创建后将实际 URL 填入 `.env.local.L4` 的 `L4_RAG_APP_URL`、`L4_TIER1_APP_URL`、`L4_TIER2_APP_URL`
 
 ---
 
@@ -588,7 +615,7 @@ L4_OBSERVABILITY_BLOB_PREFIX=aigoverntrustworthy
 L4_AOAI_SERVICE_NAME=AIGovernTrustworthyAOAI
 L4_AOAI_ENDPOINT=https://aigoverntrustworthyaoai.openai.azure.com/
 
-# ── Azure AI Foundry ──────────────────────────────────────────────────────
+# ── Azure AI Foundry（旧 AzureML workspace 后端；非当前 RAG Web App 运行路径）──────
 L4_AI_FOUNDRY_HUB_NAME=aigoverndemoaihub
 L4_AI_FOUNDRY_PROJECT_NAME=aigovenaihubproject
 L4_AI_FOUNDRY_PROJECT_ENDPOINT=https://0ccc5150-37cd-4136-8f18-02728d0b38b7.workspace.eastus2.api.azureml.ms
@@ -603,12 +630,13 @@ L4_FOUNDRY_FINETUNE_MODEL_ENDPOINT=<to-be-created>
 L4_FOUNDRY_AGENT_NAME=AIGovernTrustworthyDemoFoundryAgent
 L4_FOUNDRY_AGENT_ID=<to-be-created>
 
-# ── RAG Governance Service（步骤 2：Foundry Agent with File Search）──────────
-L4_RAG_AGENT_NAME=AIGovernTrustworthyDemoRAGAgent
-L4_RAG_AGENT_ID=<to-be-created>                  # 步骤 2 create_agent.py 运行后填入
-L4_RAG_SERVICE_URL=<to-be-configured>             # APIM /rag 路径，APIM 就绪后填入
+# ── RAG Governance Service（步骤 2：Web App + lightweight retrieval）────────
+L4_RAG_APP_NAME=AIGovernTrustworthyRAGApp
+L4_RAG_APP_URL=<to-be-deployed>                    # https://AIGovernTrustworthyRAGApp.azurewebsites.net
+L4_RAG_RETRIEVAL_MODE=local_lexical_in_memory
+L4_RAG_SERVICE_URL=<to-be-configured>              # APIM /rag base URL；RAG Web App 的 /ui/responses 服务端代理读取此值
 
-# ── Azure AI Search（RAG Service 使用）────────────────────────────────────
+# ── Azure AI Search（RAG fallback；主路径不依赖）───────────────────────────
 L4_AI_SEARCH_NAME=aigoverntrustworthysearch
 L4_AI_SEARCH_ENDPOINT=https://aigoverntrustworthysearch.search.windows.net
 L4_AI_SEARCH_INDEX_NAME=aigoverntrustworthydemo-rag-index
@@ -621,8 +649,9 @@ L4_STORAGE_CONNECTION_STRING=<to-be-created>
 L4_STORAGE_CONTAINER_RAG_DOCS=aigoverntrustworthydemo-rag-docs
 L4_STORAGE_CONTAINER_FINETUNE=aigoverntrustworthydemo-finetune
 
-# ── App Services（Tier 1 / Tier 2；RAG 不再使用 App Service）─────────────────
-L4_APP_SERVICE_PLAN_NAME=AIGovernTrustworthyDemoASP
+# ── App Services（RAG / Tier 1 / Tier 2；复用现有 Plan）─────────────────────
+L4_APP_SERVICE_PLAN_NAME=AIGovernDemoASP
+L4_APP_SERVICE_PLAN_RESOURCE_GROUP=AIGovernDemoRG
 L4_TIER1_APP_NAME=AIGovernTrustworthyDemoTier1App
 L4_TIER1_APP_URL=<to-be-deployed>               # https://AIGovernTrustworthyDemoTier1App.azurewebsites.net
 L4_TIER2_APP_NAME=AIGovernTrustworthyDemoTier2App
@@ -655,8 +684,8 @@ L4_TARGET_REGISTRY_VERSION=1
 | M2 | Observability Blob Storage Account | `aigoverntrustworthysa` | `AIGovernTrustworthyRG` | Standard_LRS，canadaeast | `AIGovernTrustworthyDemo-ObservabilityBlob` | `L4_OBSERVABILITY_BLOB_STORAGE_ACCOUNT_NAME` | 已手动创建 |
 | M3 | Observability Blob Container | `ai-invocation-archive` | — | — | N/A | `L4_OBSERVABILITY_BLOB_CONTAINER` | 已手动创建 |
 | M4 | API Management | `AIGovernTrustworthyDemoAPIM` | `AIGovernTrustworthyRG` | Developer stv2，canadaeast，VNet Internal | `AIGovernTrustworthyDemo-APIM` | `L4_APIM_GATEWAY_URL` | ✅ 已创建，VNet Internal 配置完成 |
-| M5 | App Service Plan | `AIGovernTrustworthyDemoASP` | `AIGovernTrustworthyRG` | B2，Linux，canadaeast | `AIGovernTrustworthyDemo-AppServicePlan` | `L4_APP_SERVICE_PLAN_NAME` | 待创建 |
-| M6 | RAG Service Web App | `AIGovernTrustworthyDemoRAGService` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-RAGService` | `L4_RAG_SERVICE_URL` | 待创建 |
+| M5 | App Service Plan（复用） | `AIGovernDemoASP` | `AIGovernDemoRG` | B3，Linux，canadaeast | 现有资源 | `L4_APP_SERVICE_PLAN_NAME` | 已存在 |
+| M6 | RAG Web App | `AIGovernTrustworthyRAGApp` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-RAGService` | `L4_RAG_APP_URL` | 待创建 |
 | M7 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier1App` | `L4_TIER1_APP_URL` | 待创建 |
 | M8 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier2App` | `L4_TIER2_APP_URL` | 待创建 |
 | M9 | Copilot Studio Agent | `AIGovernTrustworthyDemoCopilotStudioAgent` | Copilot Studio（Power Platform） | — | N/A | `L4_COPILOT_STUDIO_BOT_ID`、`L4_COPILOT_STUDIO_DIRECTLINE_SECRET` | 待创建 |
@@ -674,8 +703,8 @@ L4_TARGET_REGISTRY_VERSION=1
 | A3 | SPN | `AIGovernTrustworthyDemoTier2AppSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_TIER2_APP_CLIENT_ID`、`L4_TIER2_APP_CLIENT_SECRET` |
 | A4 | SPN | `AIGovernTrustworthyDemoEvaluationRunnerSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_EVALUATION_RUNNER_CLIENT_ID`、`L4_EVALUATION_RUNNER_CLIENT_SECRET` |
 | A5 | SPN | `AIGovernTrustworthyDemoPyRITRunnerSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_PYRIT_RUNNER_CLIENT_ID`、`L4_PYRIT_RUNNER_CLIENT_SECRET` |
-| A6 | Azure AI Search | `aigoverntrustworthysearch` | `AIGovernTrustworthyRG` | `az search service create` | `AIGovernTrustworthyDemo-RAGSearch` | `L4_AI_SEARCH_ADMIN_KEY`、`L4_AI_SEARCH_QUERY_KEY` |
-| A7 | AI Search 索引 | `aigoverntrustworthydemo-rag-index` | — | Python ingestion 脚本 | N/A | `L4_AI_SEARCH_INDEX_NAME`（已知） |
+| A6 | Azure AI Search（fallback） | `aigoverntrustworthysearch` | `AIGovernTrustworthyRG` | `az search service create` | `AIGovernTrustworthyDemo-RAGSearch` | `L4_AI_SEARCH_ADMIN_KEY`、`L4_AI_SEARCH_QUERY_KEY` |
+| A7 | AI Search 索引（fallback） | `aigoverntrustworthydemo-rag-index` | — | Python ingestion 脚本 | N/A | `L4_AI_SEARCH_INDEX_NAME`（已知） |
 | A8 | Storage Account | `aigoverntrustworthydemostorage` | `AIGovernTrustworthyRG` | `az storage account create` | `AIGovernTrustworthyDemo-Storage` | `L4_STORAGE_CONNECTION_STRING` |
 | A9 | Storage Container | `aigoverntrustworthydemo-rag-docs` | — | `az storage container create` | N/A | — |
 | A10 | Storage Container | `aigoverntrustworthydemo-finetune` | — | `az storage container create` | N/A | — |
@@ -685,7 +714,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | A14 | Azure AI Foundry Fine-tune Deployment | `AIGovernTrustworthyDemoFineTuneModel` | `aigoverndemofoundryproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_FINETUNE_MODEL_DEPLOYMENT` |
 | A15 | Azure AI Foundry Agent | `AIGovernTrustworthyDemoFoundryAgent` | `aigoverndemofoundryproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_AGENT_ID` |
 | A16 | VM 模型安装 | Phi-3-mini via ollama | VM 内部 | SSH + 初始化脚本 | N/A | — |
-| A17 | RBAC 角色授权 | Deploy SPN + 各应用运行时 SPN | 各资源作用域 | `az role assignment create` | N/A | — |
+| A17 | RBAC 角色授权 | Deploy SPN + RAG / Tier1 / Tier2 等应用运行时 SPN | 各资源作用域 | `az role assignment create` | N/A | — |
 
 ---
 
@@ -707,13 +736,14 @@ L4_TARGET_REGISTRY_VERSION=1
 
 | # | 决策内容 | 涉及步骤 | 状态 |
 |---|---|---|---|
-| S1 | AI Search 索引 schema 已确认：8 字段 + 1536 维向量，3 类内容（standard/news/product_solution），Embedding 用 text-embedding-3-small | 步骤 2（RAG Service） | ✅ 已确认 |
+| S1 | RAG 主路径锁定为 Azure Web App + 代码切块 + 进程内轻量级检索；AI Search schema 仅保留 fallback | 步骤 2（RAG Service） | ✅ 已确认 |
 | S2 | Fine-tune：JSONL chat completion 格式，210 条（200 正确 + 10 故意错误），来源 NIST AI RMF + NIST AI 600-1，目标模型 gpt-5.4-nano 或同类可用模型 | 步骤 4（fine-tune 模型） | ✅ 已确认 |
 | S3 | VM CPU-only，Standard_D4s_v3，使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF，~2.2GB），通过 ollama 暴露 OpenAI 兼容 API | 步骤 5（VM 模型） | ✅ 已确认 |
 | S4 | Observability Blob archive 全新建设，由用户手动创建，当前已创建（`aigoverntrustworthysa` + `ai-invocation-archive`） | 步骤 1（基础设施） | ✅ 已确认 |
 | S5 | App Insights 复用现有实例（`APPLICATIONINSIGHTS_CONNECTION_STRING`） | 步骤 1（基础设施） | ✅ 已确认 |
-| S6 | 新建 App Service Plan（`AIGovernTrustworthyDemoASP`，B2，Linux）；Web App 由用户在 Portal 手动创建 | 步骤 2/9/10 | ✅ 已确认 |
-| S7 | Foundry Hub / Project 复用现有实例，不新建 | 步骤 3/4/7 | ✅ 已确认 |
+| S6 | 复用现有 App Service Plan（`AIGovernDemoASP`，Linux，canadaeast）；步骤 2 创建 RAG Web App，步骤 9/10 可继续复用 | 步骤 2/9/10 | ✅ 已确认 |
+| S7 | 旧 Foundry Hub / Project 复用现有实例；步骤 2 不再新建 RAG Hosted Agent 专用 Foundry Account / Project | 步骤 2/3/4/7 | ✅ 已确认 |
+| S8 | RAG 运行时身份使用现有 `AIGovernTrustworthyDemoRAGServiceSPN`；不再依赖 Hosted Agent 平台生成 identity | 步骤 2 | ✅ 已确认 |
 
 ---
 
@@ -730,7 +760,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | Azure AI Foundry Project | `aigovenaihubproject` |
 | Application Insights | `appinsights` |
 | Log Analytics Workspace | `aiexvddh5zbxgtg` |
-| ACR | `AIGovernDemoACR` |
+| ACR（legacy / fallback） | `AIGovernDemoACR` |
 
 
 ### 8.2 新建资源命名结果
@@ -743,15 +773,15 @@ L4_TARGET_REGISTRY_VERSION=1
 | Tier 2 App 运行时 SPN | `AIGovernTrustworthyDemoTier2AppSPN` |
 | Evaluation Runner 运行时 SPN | `AIGovernTrustworthyDemoEvaluationRunnerSPN` |
 | PyRIT Runner 运行时 SPN | `AIGovernTrustworthyDemoPyRITRunnerSPN` |
-| Azure AI Search | `aigoverntrustworthysearch` |
-| AI Search 索引 | `aigoverntrustworthydemo-rag-index` |
+| RAG Web App | `AIGovernTrustworthyRAGApp` |
+| Azure AI Search（fallback） | `aigoverntrustworthysearch` |
+| AI Search 索引（fallback） | `aigoverntrustworthydemo-rag-index` |
 | Storage Account | `aigoverntrustworthydemostorage` |
 | Storage Container | `aigoverntrustworthydemo-rag-docs` |
 | Storage Container | `aigoverntrustworthydemo-finetune` |
 | Observability Payload Archive Storage Account | `aigoverntrustworthysa` |
 | Observability Payload Archive Container | `ai-invocation-archive` |
-| App Service Plan | `AIGovernTrustworthyDemoASP` |
-| RAG Service Web App | `AIGovernTrustworthyDemoRAGService` |
+| App Service Plan（复用） | `AIGovernDemoASP` |
 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` |
 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` |
 | Azure VM | `AIGovernTrustworthyDemoVM` |
@@ -770,12 +800,12 @@ L4_TARGET_REGISTRY_VERSION=1
 
 | 编号 | 决策 | 理由 | 决策日期 |
 |---|---|---|---|
-| DD-001 | RAG 知识库覆盖 AI Security 标准 + 新闻 + 微软/合作伙伴产品方案 | 与 AIGovernApp 的 Governance 定位高度相关；内容可自动更新 | 2026-05 |
-| DD-002 | RAG Embedding 使用 `text-embedding-3-small`（1536 维） | 现有 Azure OpenAI 端点已支持，无需新建资源；维度足够 POC 使用 | 2026-05 |
+| DD-001 | RAG 知识库优先覆盖 AI Governance 行业标准 PDF | 与 AIGovernApp 的 Governance 定位高度相关；先使用稳定标准文档，新闻和产品资料后置 | 2026-05 |
+| DD-002 | RAG 检索主路径使用代码切块 + 进程内轻量级检索 | 避免 Hosted Agent 区域限制与新增 embedding / vector 资源；Azure AI Search 仅保留 fallback | 2026-05 |
 | DD-003 | Fine-tune 使用 210 条 Q&A（200 正 + 10 故意错误） | 故意错误条目用于演示 Red Teaming 检测能力（模型可能"自信地答错"） | 2026-05 |
 | DD-004 | Fine-tune 数据来源限定 NIST AI RMF + NIST AI 600-1 | POC 阶段最小化数据范围；两份文档都已在仓库中有引用 | 2026-05 |
 | DD-005 | VM 使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF）+ ollama | CPU-only，最小资源消耗；MIT 许可；ollama 单命令部署，OpenAI 兼容 API；模型质量足够演示 | 2026-05 |
-| DD-006 | Web App / App Service Plan 由用户手动在 Portal 创建；Observability Blob archive 也由用户手动创建 | 当前由用户统一控制 Domain 4 基础设施创建节奏；创建后通过 `.env.local.L4` 记录参数 | 2026-05 |
-| DD-007 | Foundry Hub / Project 复用现有 | 避免重复创建资源；现有环境已有部署配额和关联资源 | 2026-05 |
+| DD-006 | RAG / Tier 1 / Tier 2 Web App 统一走 App Service；RAG 复用现有 `AIGovernDemoASP` | 减少资源数量，避免新建 Service Plan；符合当前用户要求 | 2026-05 |
+| DD-007 | 步骤 2 放弃 Hosted Agent；旧 Foundry Hub / Project 继续仅用于其他 Foundry 场景 | Hosted Agent 受区域限制；RAG Web App 不再依赖新后端 Foundry Project | 2026-05 |
 | DD-008 | App Insights 复用现有 | POC 阶段日志量小，无需隔离；减少资源数量 | 2026-05 |
 | DD-009 | 所有关键参数名写入 `.env.local.L4` | 支持后续脚本自动化；用户可手动修改参数名 | 2026-05 |

@@ -163,12 +163,23 @@ Tier1 / Evaluation Runner / PyRIT
 APIM /rag
         |  APIM diagnostics -> App Insights
         v
-Azure Web App: AIGovernTrustworthyRAGApp
+Azure Web App: AIGovernTrustworthyRAGApp (/responses)
         |-- PDF load / chunking / in-memory retrieval
         |-- AOAI model call
         |-- shared_observability.log_llm_call()
         v
 Blob archive + answer/citations response
+
+Manual UI (browser)
+        |
+        v
+Azure Web App: AIGovernTrustworthyRAGApp (/ui/responses proxy)
+        |
+        v
+APIM /rag
+        |
+        v
+Azure Web App: AIGovernTrustworthyRAGApp (/responses)
 ```
 
 ### 6.2 Web API 约定
@@ -179,7 +190,8 @@ RAG Web App 暴露以下端点：
 |---|---|---|
 | `/health` | `GET` | 健康检查；返回 `{"status":"healthy","chunks_loaded":N}` |
 | `/responses` | `POST` | 主查询接口；返回 AI 回答 + citations + archive_id |
-| `/` | `GET` | 交互式 Chat UI（HTML 页面，供手动测试使用） |
+| `/ui/responses` | `POST` | 手动测试 UI 的服务端代理端点；把请求转发到 `L4_RAG_SERVICE_URL + /responses` |
+| `/` | `GET` | 交互式 Chat UI（HTML 页面，供手动测试使用）；页面 JS 调用 `/ui/responses`，不直接访问 Internal APIM |
 
 `POST /responses` 请求体：
 
@@ -223,7 +235,17 @@ shared_observability.log_llm_call(...)
 | `extra_attributes.rag_app_name` | `AIGovernTrustworthyRAGApp` |
 | `extra_attributes.retrieval_mode` | `local_lexical_in_memory` |
 
-### 6.4 Observability 分层
+### 6.4 UI -> APIM 代理原则
+
+RAG Web App 自带的手动测试 UI 不是独立的消费端应用，但为了让手动测试也经过统一治理入口，采用以下规则：
+
+1. 浏览器只访问 `GET /` 和 `POST /ui/responses`。
+2. `/ui/responses` 本身不执行 RAG 逻辑，只把请求体原样转发给 `L4_RAG_SERVICE_URL + /responses`。
+3. 在 Azure 开发环境中，`L4_RAG_SERVICE_URL` 应配置为 APIM `https://aigoverntrustworthydemoapim.azure-api.net/rag`。
+4. APIM 使用 `traceparent` `exists-action="skip"` 策略：若上游未提供 W3C trace，上游 hop 由 APIM 自动补齐；若上游已提供，则 APIM 保留原值不覆盖。
+5. 真正写 Blob evidence 的仍然是 `/responses` 中的模型调用逻辑，`/ui/responses` 不单独写一条 RAG evidence。
+
+### 6.5 Observability 分层
 
 | 层 | 负责方 | 覆盖内容 |
 |---|---|---|
@@ -233,7 +255,7 @@ shared_observability.log_llm_call(...)
 | shared-observability Blob evidence（调用方侧，可选） | 上游 App（如 Tier1 App） | 调用 RAG API 的请求 / 响应证据；`target_type=rag_service`，`source_type=tier1_consumer`，`service_name` 为上游 App 名 |
 | App Insights 统一查询 | Azure Monitor | APIM + Web App + evidence thin event 聚合 |
 
-### 6.5 调用方（上游 App）记录 RAG API 调用的规范
+### 6.6 调用方（上游 App）记录 RAG API 调用的规范
 
 当 Tier 1 Consumer App 或 evaluation runner 调用 RAG 服务 API 时，**调用方自己也应调用 `log_llm_call()`** 记录这次外出调用，参数如下：
 
@@ -289,6 +311,20 @@ https://aigoverntrustworthydemoapim.azure-api.net/rag
 
 APIM 仍只做 pass-through、diagnostics、rate limit / policy，不做 RAG orchestration。
 
+RAG Web App 自带的手动测试 UI 不直接让浏览器访问 APIM，而是：
+
+```text
+Browser -> GET / -> POST /ui/responses
+        -> L4_RAG_SERVICE_URL (/rag/responses)
+        -> APIM
+        -> Web App /responses
+```
+
+这样可以满足两点：
+
+1. 浏览器不需要直接访问 Internal APIM；
+2. 手动测试路径仍然经过 APIM diagnostics 与 W3C trace policy。
+
 ---
 
 ## 8. 身份与权限设计
@@ -318,7 +354,7 @@ RAG Web App 运行时身份需要：
 | `L4_RAG_APP_URL` | RAG Web App 直接 URL |
 | `L4_RAG_MODEL_DEPLOYMENT` | RAG 使用的模型 deployment |
 | `L4_RAG_RETRIEVAL_MODE` | 当前检索实现模式 |
-| `L4_RAG_SERVICE_URL` | 经 APIM 暴露后的 `/rag` URL |
+| `L4_RAG_SERVICE_URL` | 经 APIM 暴露后的 `/rag` base URL；`/ui/responses` 代理读取此值 |
 
 ---
 
@@ -329,10 +365,10 @@ RAG Web App 运行时身份需要：
 | 知识库 PDF 目录 | `apps/rag-service/knowledge-base/` | ✅ 已就绪 | 5 个 AI Governance PDF（NIST RMF、EU AI Act、OWASP LLM Top10、Singapore MAS、Singapore Model AI Gov Framework） |
 | RAG Web App 源码 | `apps/rag-service/app.py` | ✅ 已就绪 | FastAPI，BM25+文档别名提权，`shared-observability` 集成，Chat UI |
 | Dockerfile | `apps/rag-service/Dockerfile` | ✅ 已就绪 | 从仓库根构建；嵌入 `packages/shared-observability` |
-| Docker 镜像 | `aigoverndemoacr.azurecr.io/aigoverntrustworthyragapp:v1.0.2` | ✅ 已就绪 | 当前生产版本 |
+| Docker 镜像 | `aigoverndemoacr.azurecr.io/aigoverntrustworthyragapp:v1.0.3` | ✅ 已就绪 | 当前生产版本 |
 | Azure Web App | `AIGovernTrustworthyRAGApp` | ✅ 已就绪 | `canadaeast` region，Managed Identity = `L4_RAG_SERVICE_CLIENT_ID` |
 | Blob evidence 路径 | `aigoverntrustworthy/{yyyy}/{mm}/{dd}/AIGovernTrustworthyDemo.RAGService/rag_service/{archive_id}/` | ✅ 已验证 | 每次调用写入 input/output/metadata.json |
-| APIM 配置 | `apps/rag-service/scripts/` 或 `infra/apim/` | 🔲 待完成 | 将 `/rag` 后端切到 RAG Web App |
+| APIM 配置 | `apps/rag-service/scripts/` 或 `infra/apim/` | 🔲 待完成 | 将 `/rag` 后端切到 RAG Web App，并补齐 `traceparent` 缺省注入策略 |
 | Blob viewer | `apps/blob-viewer.html` + `apps/launch_blob_viewer.py` | ✅ 已就绪 | 本地代理模式（端口 8888）查看 `ai-invocation-archive` |
 
 > 当前仓库中保留的 Hosted Agent 原型文件仅作为历史实验记录，不是当前批准路径。

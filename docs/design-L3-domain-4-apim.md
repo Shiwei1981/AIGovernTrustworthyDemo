@@ -39,7 +39,7 @@
           │ 按 path 路由到不同后端
     ┌─────┼─────┬──────┬──────┬────────┬──────────┐
     ▼     ▼     ▼      ▼      ▼        ▼          ▼
-Foundry AOAI  AOAI  Foundry DirectLine VM:11434  App
+Hosted AOAI  AOAI  Foundry DirectLine VM:11434  App
 Agent  Native FT    Custom  (Copilot)  (ollama)  Service
 (RAG)  Model  Model Agent
 ```
@@ -86,7 +86,7 @@ APIM 部署在 **Internal VNet 模式**，Gateway URL 只在 VNet 内部可达�
 | Public IP（Azure 自动分配） | `40.86.204.28` |
 | NSG | `nsg-subnet-APIM`（在 `AIGovernDemoRG`），含所有 APIM 必需规则 |
 | System-Assigned MSI | `32195307-0138-49c1-b36f-381928efcd5d` |
-| MSI RBAC | `Azure AI User` + `AzureML Data Scientist` on `aigovenaihubproject` ✅ |
+| MSI RBAC | 旧 `aigovenaihubproject` 已授权；RAG Web App 路径不再依赖 Hosted Agent 专用 Foundry RBAC |
 | App Insights Logger | `applicationinsights`（linked to `aiexvddh5zbxgtg`）✅ |
 | Gateway Diagnostics | 已启用，100% sampling，W3C correlation，verbosity=information ✅ |
 
@@ -114,7 +114,7 @@ APIM Product 用于将多个 API 组合打包，并控制访问策略（subscrip
 
 | API 名 | APIM 路径 | 后端目标类型 | 认证 scope | 实现状态 |
 |---|---|---|---|---|
-| `rag-service` | `/rag` | Foundry Agent（RAG） | `https://ml.azure.com` | ✅ 已配置 |
+| `rag-service` | `/rag` | RAG Web App | N/A | 需更新为 Web App |
 | `native-model` | `/native-model` | AOAI gpt-5.4-nano | `https://cognitiveservices.azure.com` | ⬜ 待配置 |
 | `finetune-model` | `/finetune-model` | AOAI fine-tune deployment | `https://cognitiveservices.azure.com` | ⬜ 待配置（后端未就绪）|
 | `foundry-agent` | `/foundry-agent` | Foundry 自定义 Agent | `https://ml.azure.com` | ⬜ 待配置（Agent 未创建）|
@@ -145,7 +145,7 @@ apiType:            http
 
 | Backend 名 | serviceUrl | 认证方式 | 状态 |
 |---|---|---|---|
-| `foundry-agent-rag` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject` | MSI，scope=`https://ml.azure.com` | ✅ serviceUrl 写在 API serviceUrl 字段 |
+| `rag-webapp` | `https://AIGovernTrustworthyRAGApp.azurewebsites.net` | 无（APIM -> Web App 直接 HTTPS） | ⬜ 待更新 |
 | `aoai-native-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建 |
 | `aoai-finetune-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建（deployment 未就绪）|
 | `foundry-custom-agent` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject` | MSI，scope=`https://ml.azure.com` | ⬜ 待创建（Agent 未创建）|
@@ -163,7 +163,6 @@ APIM 对需要 Azure 身份的后端使用 System-Assigned MSI 自动获取 toke
 
 | 后端资源类型 | Token Scope | MSI 所需 RBAC |
 |---|---|---|
-| Foundry Agent API（ml.azure.com） | `https://ml.azure.com` | `Azure AI User` on `aigovenaihubproject` ✅ |
 | Azure OpenAI（AOAI chat completions） | `https://cognitiveservices.azure.com` | `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI` ⬜ |
 | App Service（Tier1/Tier2） | 透传客户端 token（不由 MSI 注入）| — |
 | Copilot Studio Direct Line | DirectLine secret（Named Value）| — |
@@ -181,70 +180,65 @@ az role assignment create \
 
 ## 7. API 详细设计
 
-### 7.1 `rag-service` — RAG 治理问答服务 ✅
+### 7.1 `rag-service` — RAG 治理问答服务（Web App）
 
-**状态**：已配置
+**状态**：步骤 2 已改为 RAG Web App 方案，后端不再使用 Hosted Agent。
 
 **前端**：
 ```
 path:        /rag
-serviceUrl:  https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject
+serviceUrl:  https://AIGovernTrustworthyRAGApp.azurewebsites.net
 ```
 
 **Operations**：
 
 | Operation ID | 方法 | 路径模板 | 说明 |
 |---|---|---|---|
-| `threads` | POST | `/threads` | 创建对话 Thread |
-| `add-message` | POST | `/threads/{threadId}/messages` | 向 Thread 添加用户消息 |
-| `create-run` | POST | `/threads/{threadId}/runs` | 启动 Agent Run（含 `assistant_id`）|
-| `get-run` | GET | `/threads/{threadId}/runs/{runId}` | 轮询 Run 状态 |
-| `list-messages` | GET | `/threads/{threadId}/messages` | 获取 Thread 所有消息（含 citations）|
+| `query-rag` | POST | `/responses` | 调用 RAG Web App；body 采用轻量级 Responses 风格 JSON（至少包含 `input`） |
+| `health-check` | GET | `/health` | 透传 RAG Web App 健康检查 |
 
 **Inbound Policy**（API 级别）：
 ```xml
 <policies>
   <inbound>
     <base />
-    <!-- 注入 APIM MSI token，scope=ml.azure.com -->
-    <authentication-managed-identity
-      resource="https://ml.azure.com"
-      output-token-variable-name="msi-token" />
-    <set-header name="Authorization" exists-action="override">
-      <value>@("Bearer " + (string)context.Variables["msi-token"])</value>
+    <set-header name="traceparent" exists-action="skip">
+      <value>@("00-" + context.RequestId.ToString("N") + "-" + context.RequestId.ToString("N").Substring(16, 16) + "-01")</value>
     </set-header>
-    <!-- 注入 Foundry Agent API version -->
-    <set-query-parameter name="api-version" exists-action="override">
-      <value>2024-05-01-preview</value>
-    </set-query-parameter>
+    <set-backend-service base-url="https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net" />
   </inbound>
-  <backend><base /></backend>
-  <outbound><base /></outbound>
-  <on-error><base /></on-error>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+    <set-header name="x-aigov-apim-request-id" exists-action="override">
+      <value>@(context.RequestId.ToString())</value>
+    </set-header>
+  </outbound>
+  <on-error>
+    <base />
+    <set-status code="502" reason="Bad Gateway" />
+  </on-error>
 </policies>
 ```
 
 **调用示例**（从 VNet 内部）：
 ```bash
-# 1. 创建 Thread
-POST https://aigoverntrustworthydemoapim.azure-api.net/rag/threads
+POST https://aigoverntrustworthydemoapim.azure-api.net/rag/responses
 Content-Type: application/json
-{}
-
-# 2. 添加消息
-POST https://aigoverntrustworthydemoapim.azure-api.net/rag/threads/{threadId}/messages
-{"role": "user", "content": "What are the four core functions of NIST AI RMF?"}
-
-# 3. 启动 Run
-POST https://aigoverntrustworthydemoapim.azure-api.net/rag/threads/{threadId}/runs
-{"assistant_id": "asst_sFQ8LdzWZsExbdIYc8z2MkjV"}
-
-# 4. 轮询状态
-GET https://aigoverntrustworthydemoapim.azure-api.net/rag/threads/{threadId}/runs/{runId}
-
-# 5. 获取回答 + citations
-GET https://aigoverntrustworthydemoapim.azure-api.net/rag/threads/{threadId}/messages
+{
+  "input": "What are the four core functions of NIST AI RMF?"
+}
 ```
+
+**设计说明**：
+
+- APIM 不执行 RAG orchestration，只负责 pass-through、diagnostics、限流策略。
+- RAG Web App 内部完成 PDF 切块、轻量级检索、模型调用、LLM input/output/error 捕获和 Blob evidence 写入。
+- 当调用方未显式传入 `traceparent` 时，APIM 使用 `context.RequestId` 自动生成一条 W3C Trace Context；当调用方已带 `traceparent` 时，APIM 保留原值。
+- RAG Web App 自带的 Chat UI 不直接从浏览器访问 Internal APIM，而是由 Web App 内部 `/ui/responses` 代理转发到 `L4_RAG_SERVICE_URL`。
+- RAG 路径的主要关联链路是 APIM diagnostics + Web App telemetry + Blob evidence；不依赖 Hosted Agent tracing。
 
 ---
 
@@ -628,10 +622,9 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
 
 | Named Value 名 | 值 | 类型 | 用途 | 状态 |
 |---|---|---|---|---|
-| `foundry-api-version` | `2024-05-01-preview` | Plain | Foundry Agent API version | ⬜ 待创建（当前硬编码在 policy 中）|
 | `aoai-api-version` | `2025-01-01-preview` | Plain | AOAI API version | ⬜ 待创建 |
 | `copilot-directline-secret` | `<L4_COPILOT_DIRECTLINE_SECRET>` | Secret | Copilot Studio Direct Line token | ⬜ 待创建（Bot 创建后）|
-| `rag-agent-id` | `asst_sFQ8LdzWZsExbdIYc8z2MkjV` | Plain | RAG Agent ID（可选，当前 policy 不需要）| ⬜ 可选 |
+| `rag-webapp-endpoint` | `<L4_RAG_APP_URL>` | Plain | RAG Web App `/responses` endpoint | ⬜ 待创建 |
 
 ---
 
@@ -641,8 +634,12 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
 已完成 ──────────────────────────────────────────────────────────
  ✅ APIM 实例创建（VNet Internal、NSG、Succeeded）
  ✅ App Insights logger + gateway diagnostics
- ✅ APIM MSI 启用（Azure AI User + AzureML Data Scientist）
- ✅ rag-service API + operations + policy + diagnostics
+ ✅ APIM MSI 启用（旧 Foundry Project 已授权）
+
+等 RAG Web App 步骤就绪（步骤 2）───────────────────────────────
+ ⬜ 创建 `AIGovernTrustworthyRAGApp`
+ ⬜ rag-service backend 更新到 Web App /responses endpoint
+ ⬜ rag-service API diagnostics 复核
 
 等 AOAI 相关步骤就绪（步骤 3、4）──────────────────────────────
  ⬜ APIM MSI → Cognitive Services OpenAI User on AIGovernTrustworthyAOAI
@@ -672,11 +669,11 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
 | 类别 | 项目 | 状态 |
 |---|---|---|
 | **实例** | APIM 创建、VNet Internal、NSG | ✅ 完成 |
-| **实例** | MSI 启用 + RBAC（Foundry）| ✅ 完成 |
+| **实例** | MSI 启用 + RBAC（旧 Foundry Project）| ✅ 完成 |
 | **实例** | MSI RBAC（AOAI）| ⬜ 待添加 |
 | **观测** | App Insights logger | ✅ 完成 |
 | **观测** | Gateway-level diagnostics | ✅ 完成 |
-| **API** | `rag-service` + policy + diagnostics | ✅ 完成 |
+| **API** | `rag-service` Web App backend + policy + diagnostics | ⬜ 待更新 |
 | **API** | `native-model` | ⬜ 待配置 |
 | **API** | `finetune-model` | ⬜ 待配置（后端未就绪）|
 | **API** | `foundry-agent` | ⬜ 待配置（Agent 未创建）|

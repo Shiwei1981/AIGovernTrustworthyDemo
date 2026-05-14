@@ -22,7 +22,7 @@
 
 | 纳管对象 / 报表展示对象 | 治理策略 | 是否需要预先准备 |
 |---|---|---|
-| RAG Service（知识检索问答服务） | Evaluation + Red Teaming + App Insights | 是 |
+| RAG Service（知识检索问答服务） | Evaluation + Red Teaming + App Insights + Blob evidence | 是 |
 | Azure AI Foundry 原生模型 | Evaluation + Tracing + Red Teaming | 是 |
 | Azure AI Foundry fine-tune 模型 | Evaluation + Tracing + Red Teaming | 是 |
 | Azure AI Foundry 自定义 Agent | Evaluation + Red Teaming | 是 |
@@ -68,7 +68,7 @@ Domain 4 的二级页面在展示 coverage、failure rate、red teaming、model 
 Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的统一观测方案。统一 AI Governance 证据链由五部分组成：
 
 1. `Azure API Management (APIM)`：所有可代理 HTTP hop 的默认 tracing 入口。
-2. `Azure AI Foundry tracing`：Foundry 原生模型、fine-tune 模型、Foundry Agent 的平台内部 tracing。
+2. `Azure AI Foundry tracing`：Foundry 原生模型、fine-tune 模型、Foundry Agent / Hosted Agent 的平台内部 tracing。
 3. `packages/shared-observability/`：跨应用共享 Python 组件，仅负责记录 Python 侧 LLM 调用证据，并写入薄索引事件。
 4. `Application Insights`：APIM tracing、Foundry tracing、Python evidence 事件的统一查询入口。
 5. `Blob archive`：统一保存每次 LLM 调用的完整 `input`、`output`、`metadata`。
@@ -87,8 +87,8 @@ Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的�
 | 对象 | 统一记录路径 |
 |---|---|
 | App 2 -> App 1 | APIM tracing + App 原生遥测 |
-| App 1 -> RAG / Foundry model / Foundry Agent / VM API | APIM tracing（若可代理）+ Python evidence |
-| Foundry Agent 内部 span | Foundry tracing |
+| App 1 -> RAG / Foundry model / Foundry Agent / VM API | APIM tracing（若可代理）+ Web App / Python evidence |
+| Foundry Agent / Hosted Agent 内部 span | Foundry tracing |
 | Python 代码中的实际 LLM 调用 | Python evidence + Blob archive |
 | Evaluation / PyRIT 结果 | 结果事件 + 关联的 `trace_id` / `response_id` |
 
@@ -141,7 +141,7 @@ Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的�
 Application Insights 的管理对象分为三类：
 
 1. **平台 tracing**：APIM tracing 和 Foundry tracing 是调用链观测的主来源。
-2. **Python evidence**：RAG Service、Tier 1 / Tier 2、VM API、runner、脚本在每次实际 LLM 调用后写一条薄 evidence 事件，并保留 Blob 索引。
+2. **LLM evidence**：RAG Web App、Tier 1 / Tier 2、VM API、runner、脚本在每次实际 LLM 调用后写一条薄 evidence 事件，并保留 Blob 索引。
 3. **结果事件**：Evaluation / PyRIT / smoke test 等脚本在 run 完成后写结果事件，必要时保留 `trace_id` / `response_id`。
 
 建议统一事件名：
@@ -196,7 +196,7 @@ Application Insights 的管理对象分为三类：
 | 步骤 | 名称 | 涉及系统 / 对象 | 执行主体 | 主要产物 |
 |---|---|---|---|---|
 | 1 | 准备观测基础设施（已完成） | Log Analytics、App Insights、APIM、Blob | Copilot + 用户授权 | 环境检查脚本、KQL 验证 |
-| 2 | 建立 RAG 服务 | Azure AI Search、Azure OpenAI/Foundry、App Service | Copilot + 用户授权 | RAG API 代码、索引脚本 |
+| 2 | 建立 RAG 服务 | Azure Web App、APIM、AOAI、Blob | Copilot + 用户授权 | Web App 代码、PDF 目录、轻量级检索实现、APIM `/rag` |
 | 3 | Foundry 原生模型部署 | Azure AI Foundry | Copilot + 用户授权 | 模型清单、验证命令 |
 | 4 | Foundry fine-tune 模型 | Azure AI Foundry | Copilot + 用户授权 | fine-tune 脚本、部署清单 |
 | 5 | VM Hugging Face 模型 + API | Azure VM | Copilot + 用户 SSH | 安装脚本、API 服务代码 |
@@ -233,19 +233,19 @@ Application Insights 的管理对象分为三类：
 
 ### 步骤 2：建立 RAG 服务
 
-1. 确认 Azure AI Search、Azure OpenAI / Azure AI Foundry 模型部署是否存在。
-2. 设计最小 RAG 索引 schema：`id`、`content`、`source`、`page`、`content_vector`。
-3. 使用仓库内 NIST AI 600-1 PDF 作为初始知识材料，后续可加入公司 AI 政策文档。
-4. 开发文档切分、embedding、上传到 Azure AI Search 的脚本。
-5. 开发 RAG Service API：`retrieve → prompt → generate → return answer + citations`。
-6. 在可代理场景下将 RAG API 暴露到 APIM 后面。
-7. 在每次实际 LLM 调用中记录 `trace_id`、`response_id`、`model_name`、`model_version`、`citations`，并写 Blob evidence。
-8. 将 evidence 索引事件写入 Application Insights。
-9. 将 RAG Service 部署到 App Service，作为 Tier 1 App 的 AI 服务后端，同时作为 Domain 4 可评估目标。
+1. 复用现有 App Service Plan `AIGovernDemoASP`，创建 RAG Web App `AIGovernTrustworthyRAGApp`。
+2. 将 AI Governance 行业标准 PDF 放入仓库中的 `apps/rag-service/knowledge-base/`，随应用部署或启动时加载。
+3. 在 Web App 内实现轻量级代码式 RAG：PDF 解析、文本切块、进程内检索、模型调用、answer + citations 返回。
+4. 默认不依赖 Foundry Hosted Agent、ACR、Foundry file_search / vector store、Azure AI Search 或独立 embedding 资源。
+5. 在 Web App 真实模型调用处记录 `response_id`、`model_name`、`model_version`、`citations_count`，并写 Blob evidence。
+6. 将 evidence 索引事件写入 Application Insights；RAG 路径以 APIM tracing + Web App telemetry + Blob evidence 组成证据链。
+7. 将 APIM `/rag` 后端配置到 RAG Web App `/responses` endpoint；RAG Web App 自带的手动测试 UI 通过服务端代理调用 `L4_RAG_SERVICE_URL`（默认指向 APIM `/rag`），而不是让浏览器直接访问 Internal APIM。
+8. 将 RAG Service 作为 Tier 1 App 的 AI 服务后端，同时作为 Domain 4 可评估目标。
+9. 如后续需要新增 embedding、vector store、AI Search 等资源，必须先经用户确认。
 
-- **Copilot 可执行**：代码与脚本开发、Azure 资源查询、索引创建、App Service 部署脚本。
-- **可能需要用户操作**：如果 Search / Azure OpenAI 创建或模型部署需要 Portal 权限，由用户按步骤完成。
-- **产物**：RAG Service 需求设计、索引 schema、ingestion 脚本、RAG Service API 代码、App Insights 遥测字段说明。
+- **Copilot 可执行**：Web App 代码与部署脚本、Azure 资源查询、PDF 目录约定、轻量级检索实现、APIM 配置脚本。
+- **可能需要用户操作**：如果创建 Web App、配置应用设置或补充 AOAI / Blob / App Service 权限需要 Portal 授权，由用户按步骤完成。
+- **产物**：RAG Service 需求设计、Web App 代码、PDF 目录约定、APIM `/rag` 配置、App Insights 遥测字段说明。
 - **注意**：本步骤只建设 RAG 服务，不包含消费端应用；Tier 1 Consumer App 在步骤 9 中开发。
 
 ### 步骤 3：Foundry 原生模型部署
@@ -439,7 +439,7 @@ Application Insights 的管理对象分为三类：
 
 1. 对照 `design-L2-domain-4-output-trustworthiness.md` 更新 L1/L2 指标映射。
 2. 明确首页显示 `Grounded Response Rate` 和 `Model Identity Capture Gaps` 的数据来源。
-3. 明确二级页按 6 类对象分开展示：AI 应用、Foundry 原生模型、Foundry fine-tune 模型、Foundry Agent、Copilot Studio Agent、VM Hugging Face 模型。
+3. 明确二级页按 8 类对象分开展示：RAG Service、AI 应用、Foundry 原生模型、Foundry fine-tune 模型、Foundry Agent、Copilot Studio Agent、VM Hugging Face 模型、Tier 2 间接 AI 应用。
 4. 设计 Domain 4 API endpoint、响应结构和前端卡片布局。
 5. 后续进入代码开发，实现页面、API 和指标加载。
 
