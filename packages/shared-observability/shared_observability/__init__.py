@@ -11,6 +11,7 @@ from .schema import (
     EventNames,
     TelemetryScalar,
     TargetType,
+    SourceType,
 )
 from .errors import ConfigurationError, ObservabilityError, SerializationError, ValidationError, BlobWriteError, TelemetryEmitError
 
@@ -31,6 +32,7 @@ __all__ = [
     "TelemetryScalar",
     "TelemetrySettings",
     "TargetType",
+    "SourceType",
     "ValidationError",
     "load_settings_from_env",
     "log_llm_call",

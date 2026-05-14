@@ -82,6 +82,72 @@ class TargetType(StrEnum):
     TIER2_CONSUMER = "tier2_consumer"
 
 
+class SourceType(StrEnum):
+    """Discriminator that identifies *what kind of component is recording* the call.
+
+    Used as the optional ``source_type`` argument to ``log_llm_call()`` and stored
+    in Blob evidence metadata + App Insights event attribute ``aigov.source.type``.
+
+    **Relationship to TargetType**
+
+    ``TargetType`` answers "what did I call?" (the downstream).
+    ``SourceType`` answers "what am I?" (the recording party / caller).
+
+    Together they describe a directed edge in the AI call graph:
+    ``source_type → target_type``.
+
+    **SourceType is optional.**  When omitted, the caller identity is still
+    captured by ``service_name`` (a free-form string).  Add ``source_type``
+    when you want structured, enum-safe KQL grouping by caller category.
+
+    Example KQL: all calls from Tier 1 apps into RAG services
+    ----------------------------------------------------------
+    .. code-block:: kusto
+
+        customEvents
+        | where name == "AIGovernTrustworthyLLMEvidence"
+        | extend source_type = tostring(customDimensions["aigov.source.type"])
+        | extend target_type = tostring(customDimensions["aigov.target.type"])
+        | where source_type == "tier1_consumer" and target_type == "rag_service"
+
+    Value catalogue
+    ---------------
+    ``tier1_consumer``
+        A Tier 1 Consumer Application is the recording party.  Use when a
+        Tier 1 App calls any downstream (RAG service, Agent, LLM).
+
+    ``tier2_consumer``
+        A Tier 2 Consumer Application is the recording party.
+
+    ``rag_service``
+        The RAG service itself is the recording party — used when the RAG
+        service records its own internal LLM call.
+
+    ``foundry_agent``
+        A Foundry Agent is the recording party — used if the agent records
+        its own internal LLM calls (if accessible).
+
+    ``copilot_studio_agent``
+        A Copilot Studio Agent is the recording party.
+
+    ``evaluation_runner``
+        An automated evaluation / governance runner is the recording party.
+        Typically drives consumer apps under test.  Pair with
+        ``TargetType.TIER1_CONSUMER`` or ``TargetType.TIER2_CONSUMER``.
+
+    ``test_script``
+        A standalone test script, integration test, or manual curl-style test.
+    """
+
+    TIER1_CONSUMER = "tier1_consumer"
+    TIER2_CONSUMER = "tier2_consumer"
+    RAG_SERVICE = "rag_service"
+    FOUNDRY_AGENT = "foundry_agent"
+    COPILOT_STUDIO_AGENT = "copilot_studio_agent"
+    EVALUATION_RUNNER = "evaluation_runner"
+    TEST_SCRIPT = "test_script"
+
+
 class AIInvocationStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -147,6 +213,7 @@ class AIInvocationRecord:
     payload_ref: AIInvocationArchiveRef
     model_name: str | None = None
     model_version: str | None = None
+    source_type: "SourceType | None" = None
     test_tool: str | None = None
     test_run_id: str | None = None
     citations_count: int | None = None

@@ -21,6 +21,7 @@ from .schema import (
     BlobArchiveLayout,
     EvidenceRecord,
     EventNames,
+    SourceType,
     TargetType,
     TelemetryScalar,
 )
@@ -40,6 +41,7 @@ def log_llm_call(
     error: object | None = None,
     model_name: str | None = None,
     model_version: str | None = None,
+    source_type: str | SourceType | None = None,
     response_id: str | None = None,
     settings: ObservabilitySettings | None = None,
     trace_id: str | None = None,
@@ -66,6 +68,7 @@ def log_llm_call(
     active_settings = settings or load_settings_from_env()
     active_time = (occurred_at or datetime.now(UTC)).astimezone(UTC)
     resolved_target_type = TargetType(target_type)
+    resolved_source_type = SourceType(source_type) if source_type is not None else None
     current_trace_id, current_span_id = _read_current_trace_context()
     archive_id = uuid4().hex
     blob_layout = BlobArchiveLayout(prefix=active_settings.blob.prefix)
@@ -96,6 +99,7 @@ def log_llm_call(
         payload_ref=archive_ref,
         model_name=model_name,
         model_version=model_version,
+        source_type=resolved_source_type,
         test_tool=test_tool,
         test_run_id=test_run_id,
         citations_count=citations_count,
@@ -155,6 +159,7 @@ def _build_event_attributes(record: AIInvocationRecord) -> dict[str, TelemetrySc
         "aigov.payload.ref": archive_root,
         "aigov.target.type": record.target_type.value,
         "aigov.target.id": record.target_id,
+        "aigov.source.type": record.source_type.value if record.source_type is not None else None,
         "status": record.status.value,
     }
 
