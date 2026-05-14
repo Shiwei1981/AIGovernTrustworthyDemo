@@ -144,19 +144,18 @@ echo "[4/5] Applying API-level policy..."
 POLICY_XML='<policies>
   <inbound>
     <base />
-    <!-- Forward caller Authorization header to backend unchanged -->
-    <!-- (RAG Web App currently does not enforce AAD auth; Easy Auth can be
-         enabled later without changing this policy) -->
+    <!-- No auth validation — RAG Web App is open for now.
+         Easy Auth / validate-jwt can be added here later without touching backend. -->
 
-    <!-- Inject W3C traceparent so the Web App OTEL SDK correlates to APIM trace -->
+    <!-- Inject W3C traceparent when caller does not already supply one.
+         exists-action="skip" guarantees we never overwrite an upstream context,
+         so direct curl tests against the Web App are unaffected (no regression).
+         Expression uses @() inline form — no single-quote escaping needed. -->
     <set-header name="traceparent" exists-action="skip">
-      <value>@{
-        var traceId = context.RequestId.ToString("N");
-        return $"00-{traceId.PadLeft(32, '"'"'0'"'"')}-{traceId.Substring(0, 16).PadLeft(16, '"'"'0'"'"')}-01";
-      }</value>
+      <value>@("00-" + context.RequestId.ToString("N") + "-" + context.RequestId.ToString("N").Substring(16, 16) + "-01")</value>
     </set-header>
 
-    <!-- Explicitly route to RAG Web App (guard against serviceUrl drift) -->
+    <!-- Explicitly pin backend — guards against serviceUrl drift -->
     <set-backend-service base-url="https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net" />
   </inbound>
   <backend>
@@ -164,7 +163,7 @@ POLICY_XML='<policies>
   </backend>
   <outbound>
     <base />
-    <!-- Expose APIM request ID as a response header for correlation -->
+    <!-- Surface APIM request ID for correlation in caller logs -->
     <set-header name="x-aigov-apim-request-id" exists-action="override">
       <value>@(context.RequestId.ToString())</value>
     </set-header>
