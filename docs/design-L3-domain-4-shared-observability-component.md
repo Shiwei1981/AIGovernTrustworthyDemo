@@ -86,12 +86,33 @@ shared-observability 不再被设计为“统一 tracing 平台”或“自定�
 - 对 Foundry 原生模型、fine-tune 模型、Foundry Agent，必须开启 Foundry tracing。
 - 对支持服务端 tracing 的对象，优先使用平台原生 tracing，而不是重复自建 span 体系。
 
-#### R-004 Python 组件必须保存完整 LLM 输入输出证据
+#### R-004 Python 组件必须保存完整 AI 调用输入输出证据
 
-- Python 组件必须对它实际发起的每次 LLM 调用保存完整 `input`、`output`、`metadata`。
-- `input` 必须包含真正发给模型或 Agent 的 prompt、messages、system prompt、tool inputs、retrieval context。
+- Python 组件必须对它实际发起的每次 **AI 调用**（包括 LLM 模型 API 调用、Agent API 调用、RAG 服务 API 调用）保存完整 `input`、`output`、`metadata`。
+- `input` 必须包含真正发给下游的请求正文，包括 prompt、messages、system prompt、tool inputs、retrieval context、agent 请求体等。
 - 失败调用也必须保存失败前的完整输入和错误输出。
 - 统一保存位置必须是 Blob archive。
+
+> **说明**：`log_llm_call()` 的函数名中包含 "llm"，但它的设计定位是记录"一次 AI 调用（AI invocation）"，不限于直接调用 LLM 模型 API。当调用目标是 Agent API 或 RAG 服务 API 时，应同样使用 `log_llm_call()`，通过 `target_type` 字段区分调用类型。参见 R-004a。
+
+#### R-004a 调用 Agent API / RAG 服务 API 时使用相同记录规范
+
+当一个 Python 应用程序（例如 Tier 1 Consumer App、evaluation runner、PyRIT runner）调用的不是 LLM 模型 API，而是 **Agent API** 或 **RAG 服务 API** 时，必须遵循以下规则：
+
+1. **仍然调用 `log_llm_call()`**，不另建日志机制。
+2. **`target_type` 是区分调用类型的关键字段**：
+   - 直接调用 LLM 模型 API → `target_type = "foundry_native_model"` / `"foundry_finetune_model"` / `"vm_huggingface_model"`
+   - 调用 Foundry Agent API → `target_type = "foundry_agent"`
+   - 调用 Copilot Studio Agent API → `target_type = "copilot_studio_agent"`
+   - 调用 RAG 服务 API → `target_type = "rag_service"`
+3. **`llm_input` 传入发给下游 API 的实际请求体**（例如 RAG 调用时的 `{"input": "..."}`，Agent 调用时的 messages / task payload）。
+4. **`llm_output` 传入从下游 API 拿到的完整响应体**（例如 RAG 返回的 `{output, citations, archive_id}`，Agent 返回的 task result）。
+5. **`response_id` 取下游 API 响应中的对等标识**；若下游响应包含其自己的 `archive_id`，可写入 `extra_attributes.downstream_archive_id`。
+6. **`model_name` / `model_version` 在调用方通常不可知**，Agent / RAG 服务内部才知道调用了哪个模型。调用方这两个字段传 `None` 即可；模型身份由被调用的服务自己记录。
+
+**记录的语义是**：这一层 Python 代码向 Agent / RAG 发出了一次请求，并拿到了一个响应。不是重复记录 Agent 或 RAG 内部的 LLM 调用（那些由被调用的服务自己记录）。
+
+> **与 RAG 服务自身记录的关系**：RAG 服务内部调用 LLM 时，RAG 服务自己也会用 `log_llm_call()` 写一条 `target_type=rag_service` 的 evidence。调用方写的那条同样是 `target_type=rag_service`，但 `service_name` 不同（前者是 Tier1 App 名，后者是 RAG 服务名）。查询时可用 `service_name` 区分哪一层写的。
 
 #### R-005 查询主面统一在 Application Insights
 
@@ -106,8 +127,8 @@ shared-observability 不再被设计为“统一 tracing 平台”或“自定�
 
 #### R-007 1:1 记录粒度
 
-- Python 组件记录的粒度是“一次实际 LLM 调用”，而不是业务请求、会话或整条调用链。
-- 每次实际 LLM 调用只产生一组 Blob 证据和一条薄索引事件。
+- Python 组件记录的粒度是“一次实际 AI 调用”（直接 LLM API 调用、Agent API 调用、或 RAG API 调用），而不是业务请求、会话或整条调用链。
+- 每次实际调用只产生一组 Blob 证据和一条薄索引事件。
 - 当上游 HTTP hop 和下游 Foundry span 都存在时，这条薄索引事件应尽可能与它们共享相同 `trace_id`。
 
 #### R-008 不再要求组件维护 `correlation_id`
@@ -359,8 +380,8 @@ credential = ClientSecretCredential(
 
 #### 5.3.3 对 Python 代码的要求
 
-- 对于每次实际发起的 LLM 调用，调用前固定 `llm_input`。
-- 调用后立即调用 `log_llm_call(...)`。
+- 对于每次实际发起的 AI 调用（包括 LLM 模型 API、Agent API、RAG 服务 API），调用前固定 `llm_input`（填入发给下游的实际请求体）。
+- 调用后立即调用 `log_llm_call(...)`，并通过 `target_type` 说明此次调用的下游类型。
 - evidence 事件应在当前活动 span 内发出，这样 Application Insights envelope 中的 `operation_Id` 能自动与平台 trace 对齐。
 
 ## 6. 运行时流程设计
@@ -435,6 +456,51 @@ credential = ClientSecretCredential(
   "captured_at": "2026-05-12T00:00:00Z"
 }
 ```
+
+### 7.3a `input.json` — 按调用类型的填写规范
+
+`llm_input` 是自由类型，调用方负责将发给下游的实际请求正文传入。以下按 `target_type` 列出推荐填写方式：
+
+**直接调用 LLM 模型 API**（`foundry_native_model` / `foundry_finetune_model` / `vm_huggingface_model`）：
+
+```json
+{
+  "model": "AIGovernTrustworthyDemoNativeModel",
+  "messages": [
+    {"role": "system", "content": "You are ..."},
+    {"role": "user", "content": "What is ..."}
+  ],
+  "target_type": "foundry_native_model",
+  "target_id": "..."
+}
+```
+
+**调用 Agent API**（`foundry_agent` / `copilot_studio_agent`）：
+
+```json
+{
+  "task": "Summarize the following document ...",
+  "messages": [{"role": "user", "content": "..."}],
+  "target_type": "foundry_agent",
+  "target_id": "AIGovernTrustworthyDemoFoundryAgent"
+}
+```
+
+调用方通常不知道 Agent 内部使用的模型，因此 `model_name` / `model_version` 填 `null`；Agent 服务自身会记录内部模型调用。
+
+**调用 RAG 服务 API**（`rag_service`）：
+
+```json
+{
+  "input": "What are the four core functions of NIST AI RMF?",
+  "target_type": "rag_service",
+  "target_id": "AIGovernTrustworthyDemoRAGService"
+}
+```
+
+调用方通常不知道 RAG 服务内部使用的模型，因此 `model_name` / `model_version` 填 `null`；RAG 服务自身会记录内部 LLM 调用。
+
+> **分层记录原则**：每一层只记录它自己发出的那次调用。Tier1 App 记录"我向 RAG API 发了这个请求"；RAG 服务记录"我向 LLM 发了这个 prompt"。两条记录通过 `trace_id` 关联，查询时可以重建完整调用链。
 
 ### 7.4 `output.json`
 
@@ -552,6 +618,35 @@ customEvents
 ```
 
 再按同一 `trace_id` 去查 APIM / Foundry 原生日志。
+
+### 8.4 按 `aigov.target.type` 区分调用类型
+
+查询某时段内所有 evidence 事件，并按调用类型分组统计：
+
+```kusto
+customEvents
+| where name == "AIGovernTrustworthyLLMEvidence"
+| extend target_type = tostring(customDimensions["aigov.target.type"])
+| extend service_name = tostring(customDimensions["service.name"])
+| extend status = tostring(customDimensions.status)
+| summarize count() by target_type, service_name, status
+| order by count_ desc
+```
+
+`aigov.target.type` 可能的值及含义：
+
+| `aigov.target.type` | 含义 | 记录方 |
+|---|---|---|
+| `foundry_native_model` | 直接调用 Foundry 原生模型 API | 调用模型的 App / Script |
+| `foundry_finetune_model` | 直接调用 Foundry fine-tune 模型 API | 调用模型的 App / Script |
+| `vm_huggingface_model` | 调用 VM 中 Hugging Face 模型 API | 调用模型的 App / Script |
+| `foundry_agent` | 调用 Foundry Agent API | 调用 Agent 的上游 App（如 Tier1 App）**或** Agent 自身（若其内部也调 LLM） |
+| `copilot_studio_agent` | 调用 Copilot Studio Agent API | 调用 Agent 的上游 App |
+| `rag_service` | 调用 RAG 服务 API **或** RAG 服务内部调 LLM | 调用 RAG 的上游 App（如 Tier1 App）或 RAG 服务自身 |
+| `tier1_consumer` | Tier 1 Consumer App 层面的记录 | Tier 1 App |
+| `tier2_consumer` | Tier 2 Consumer App 层面的记录 | Tier 2 App |
+
+当同一 `trace_id` 下出现多条 evidence 事件时，`service_name` + `aigov.target.type` 组合可以区分是哪一层应用记录的哪类调用。
 
 ## 9. 失败处理与边界
 

@@ -19,7 +19,7 @@
 | Model Identity Capture Gaps | plain number | 已确认 |
 
 **关键设计决定**：
-- `Grounded Response Rate`：当前无 RAG 系统，显示 N/A；待 RAG 系统就位后自动生效
+- `Grounded Response Rate`：RAG Web App 就位后自动生效；上线前显示 N/A
 - `Model Identity Capture Gaps`：替换原 `Synthetic Content Labeling Gaps`，因其覆盖所有文本模型（含 VM），不依赖内部 tracing，是可执行的治理抓手
 - 当 Grounded Response Rate = N/A 时，首页该 Domain 的主要 governance 信号来自 Model Identity Capture Gaps
 
@@ -30,8 +30,8 @@
 | 治理对象 | 治理策略 | 备注 |
 |---|---|---|
 | Azure AI Foundry 托管模型 | Evaluation + Tracing + Red Teaming | 全面覆盖 |
-| Azure AI Foundry Agent | Evaluation + Red Teaming | 暂无内部 tracing 依赖 |
-| RAG Service（知识检索问答服务） | Evaluation + Red Teaming + App Insights | 需配置 response_id、model_name、model_version |
+| Azure AI Foundry Agent | Evaluation + Red Teaming | 普通 agent 与 RAG Service 分开治理 |
+| RAG Service（知识检索问答服务） | Evaluation + Red Teaming + App Insights + Blob evidence | Web App 内部写入 LLM input/output/error，并配置 response_id、model_name、model_version |
 | VM 中自建模型 | 红队外部调用（PyRIT） + observability 组件留痕 | 不在 VM 内部做 Foundry tracing；由 VM API / runner 写入统一证据链 |
 
 **文本模型范围说明**：本领域仅覆盖文本类模型，不包括图像生成、视频、语音等多模态输出。
@@ -45,7 +45,7 @@
 | 指标 | 图形 | 是否本期实现 | 设计确认状态 | 指标解释 | 指标数据来源 |
 |---|---|---|---|---|---|
 | Evaluation Coverage by Target Type | stacked bar | 是 | 已确认 | 按治理对象类型（AI App / Agent / Azure 模型 / VM 模型）分拆的已评估覆盖率 | Azure AI Foundry Evaluations、Azure DevOps Test Plans |
-| Groundedness / Citation Rate | donut | 是 | 已确认 | 输出中成功命中检索证据或批准来源的比例（无 RAG 时显示 N/A） | Azure AI Foundry Evaluations、Azure AI Search 检索日志 |
+| Groundedness / Citation Rate | donut | 是 | 已确认 | 输出中成功命中检索证据或批准来源的比例（无 RAG 时显示 N/A） | Azure AI Foundry Evaluations、RAG 响应 citation、Web App Blob evidence |
 | Safety Evaluator Failure Rate | donut + number | 是 | 已确认 | 安全评测中判定失败的输出占比；显示失败率和对应绝对数量 | Azure AI Foundry Evaluations（Safety Evaluator） |
 
 **数据来源**：
@@ -64,13 +64,13 @@
 | 指标 | 图形 | 是否本期实现 | 设计确认状态 | 指标解释 | 指标数据来源 |
 |---|---|---|---|---|---|
 | Traceable Output Rate | donut | 是 | 已确认 | 已附带 response_id 或等效追踪标识的输出占比（仅 Azure 托管，VM 不计） | Application Insights（response_id 字段）、Azure AI Foundry Tracing |
-| Source Attribution Rate | donut | 是 | 已确认 | 输出中包含来源引用的比例（无 RAG 时显示 N/A） | Azure AI Foundry Evaluations、Azure AI Search 检索日志 |
+| Source Attribution Rate | donut | 是 | 已确认 | 输出中包含来源引用的比例（无 RAG 时显示 N/A） | Azure AI Foundry Evaluations、RAG 响应 citation、Web App Blob evidence metadata |
 | Model Identity Capture Rate | donut / stacked bar | 是 | 已确认 | 已附带 model_name + model_version 的调用占比；按平台（Azure / VM）分拆 | Application Insights（model_name、model_version 字段）、Blob archive metadata |
 
 **数据来源**：
-- Application Insights：自定义属性 `response_id`、`model_name`、`model_version`（需要应用侧配置）
-- Azure AI Foundry Tracing：`GET /traces`
-- Blob archive metadata：保存 VM / App / runner 写入的 model_name、model_version、payload 引用
+- Application Insights：自定义属性 `response_id`、`model_name`、`model_version`（RAG Web App / App / runner 写入）
+- Azure AI Foundry Tracing：用于 Foundry 原生模型、fine-tune、普通 Foundry Agent 等托管目标；RAG Web App 不依赖 Hosted Agent tracing
+- Blob archive metadata：保存 RAG Web App / VM / App / runner 写入的 model_name、model_version、payload 引用、citation 数量
 
 **计算逻辑**：
 - Traceable Output Rate = 含 response_id 的 response 数 / Azure 托管模型 total response 数；VM 排除在外
@@ -79,7 +79,7 @@
 
 **约束说明**：
 - `Traceable Output Rate` 仅适用于 Azure 托管模型；VM 模型不统计此指标
-- `Source Attribution Rate` 当前无 RAG → 显示 N/A
+- `Source Attribution Rate` 在 RAG Web App 上线前显示 N/A；上线后以 RAG 响应 citation 和 Web App Blob metadata 为主数据源
 - `Model Identity Capture Rate` 依赖 shared-observability 写入的 Python evidence、App Insights 索引字段和 Blob metadata；未接入的目标显示 0%
 
 ---
@@ -136,7 +136,7 @@
 
 | 约束项 | 当前状态 | 处理方式 |
 |---|---|---|
-| RAG 系统 | 当前无 | Groundedness / Source Attribution Rate 显示 N/A；RAG 就绪后自动生效 |
+| RAG 系统 | `AIGovernTrustworthyRAGApp` v1.0.2（BM25 + Azure OpenAI，5 个 AI Governance PDF） | Groundedness / Source Attribution Rate 通过 Blob evidence 中的 citations 字段评估 |
 | App Insights model_name / model_version 字段 | 尚未确认是否已配置 | 若支持，用户可增加配置；Model Identity Capture Rate 依赖此字段 |
 | VM 模型接入 shared-observability | 必需 | 未接入时 VM 组 Model Identity Capture Rate 显示 0%；必须补齐 Python evidence 与 Blob metadata |
 | PyRIT 结果存储 | 可设计 | 建议：PyRIT 执行后结果写入 Azure DevOps Work Items（tag: `red-team`） |

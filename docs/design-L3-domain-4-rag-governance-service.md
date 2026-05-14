@@ -2,60 +2,56 @@
 
 ## 1. 文档定位
 
-本文件是 `design-L2-domain-4-prerequisites.md` 步骤 2（建立 RAG 服务）的专用 L3 组件设计文档，涵盖：
+本文件是 `design-L2-domain-4-prerequisites.md` 步骤 2（建立 RAG 服务）的专用 L3 组件设计文档，当前记录的**批准方案**为：
 
-- 设计目标与边界
-- 技术路线决策记录
-- 前置条件与资源依赖
-- 知识库内容规划与目录结构
-- 服务架构与部署方案
-- Observability 接入边界与 App Insights 集成范围
-- 开发产物清单
+- Azure Web App 运行形态
+- 轻量级代码式 RAG（不默认引入 embedding / vector store / Azure AI Search）
+- APIM `/rag` 统一入口
+- `shared_observability` + Blob archive + App Insights 证据链
 
 **关联文档**：
 
 | 文档 | 关系 |
 |---|---|
 | `design-L2-domain-4-prerequisites.md` | 上级步骤列表，步骤 2 的总览入口 |
-| `design-L2-domain-4-prerequisites-lowleveldesign.md` | 资源命名、SPN 权限、环境变量、部署资源清单 |
-| `design-L3-domain-4-shared-observability-component.md` | Observability 组件设计（供调用方参考） |
+| `design-L2-domain-4-prerequisites-lowleveldesign.md` | 资源命名、身份权限、环境变量、部署资源清单 |
+| `design-L3-domain-4-shared-observability-component.md` | `log_llm_call()` 与 Blob archive 证据格式 |
+| `design-L3-domain-4-apim.md` | APIM `/rag` 前端与 RAG Web App 后端接入设计 |
 
 ---
 
 ## 2. 技术路线决策
 
-### 2.1 选定方案：Azure AI Foundry Agent with File Search
+### 2.1 选定方案：Azure Web App + 代码式轻量级 RAG
 
-RAG Governance Service 使用 **Azure AI Foundry Agent + 内置 File Search 工具**作为技术实现。
+RAG Governance Service 使用 **Azure Web App** 作为运行形态，部署到现有 App Service Plan **`AIGovernDemoASP`**。检索层优先采用**代码切块 + 进程内轻量级 lexical retrieval**。
 
 **决策理由**：
 
-- 本步骤的**核心目的是验证对 RAG 质量和安全的治理**，而不是关注 RAG 运行在什么容器或基础设施上
-- Foundry Agent with File Search 将文档上传、向量化、检索、引用全部托管，无需自建索引 pipeline
-- 不需要 Azure AI Search、不需要自建 embedding pipeline、不需要 Container Apps 或 App Service
-- Foundry Agent 暴露标准 HTTP endpoint，APIM 可直接代理
-- Foundry 原生 tracing 自动覆盖 agent 内部的 file search + LLM generate spans
+- 避免 Hosted Agent 的预览限制与区域阻塞。
+- 不新增 ACR、Hosted Agent、Foundry vector store、Azure AI Search 等步骤 2 非必需资源。
+- 符合“尽量轻量级、减少依赖项”的当前要求。
+- 仍可在真实模型调用处写入 Blob evidence，并保留 `response_id`、`model_name`、`model_version`、`citations_count`。
+- RAG 服务仍可经 APIM 暴露，继续作为 Evaluation / Red Teaming 的受管目标。
 
-### 2.2 治理身份（`target_type`）不受底层技术影响
+### 2.2 已排除方案
 
-> **重要原则**：RAG Service 的治理身份是 `rag_service`，不是 `foundry_agent`。底层使用 Foundry Agent 是实现细节，治理分类取决于服务的**功能角色**（知识检索问答服务），而非部署平台。
+| 方案 | 是否采用 | 排除原因 |
+|---|---|---|
+| Microsoft Foundry Hosted Agent | 否 | 当前区域不支持，且会增加 ACR / 平台依赖 |
+| Foundry 原生 file_search / vector store | 否（默认路径） | 需要额外平台依赖，不符合当前“轻量化优先”原则 |
+| Azure AI Search-first RAG | 否（fallback） | 可控性强，但当前不是最小依赖方案 |
+| embedding + 自建 vector DB | 否（默认路径） | 需要新增 embedding 资源或更多代码/运维复杂度；如启用需先征得用户同意 |
+
+### 2.3 治理身份（`target_type`）不受底层技术影响
+
+> **重要原则**：RAG Service 的治理身份是 `rag_service`，不是 `foundry_agent`。底层改为 Web App 不影响治理分类。
 
 | 属性 | 值 | 说明 |
 |---|---|---|
-| `target_type` | `rag_service` | RAG 服务的治理分类，与步骤 7 的 Foundry Agent 严格分开 |
-| `target_id` | `AIGovernTrustworthyDemoRAGService` | 该 RAG 服务在 Domain 4 目标清单中的唯一标识 |
-| `service_name`（OTel） | `AIGovernTrustworthyDemo.RAGService` | App Insights 中的服务名 |
-
-步骤 7 的 Foundry Agent（TBD）将独立使用 `target_type = foundry_agent`，两者在 Domain 4 报表中分开展示，不混合。
-
-### 2.3 方案对比（决策备忘）
-
-| 方案 | 技术 | 是否选用 | 排除原因 |
-|---|---|---|---|
-| 方案 A | 自建 RAG API + App Service | 否 | 需要 App Service Plan + 自建索引 pipeline，复杂度高于目标 |
-| 方案 B | Prompt Flow Managed Endpoint | 否 | 需要学习 Prompt Flow DAG 格式，增加开发成本 |
-| **方案 C** | **Foundry Agent with File Search** | **✅ 选用** | 托管最简，聚焦治理验证目标 |
-| 方案 D | Container Apps | 否 | 不必要的基础设施，已被方案 C 替代 |
+| `target_type` | `rag_service` | RAG 服务的治理分类，与步骤 7 的普通 Foundry Agent 分开 |
+| `target_id` | `AIGovernTrustworthyDemoRAGService` | Domain 4 目标清单中的唯一标识 |
+| `service_name`（OTel） | `AIGovernTrustworthyDemo.RAGService` | App Insights / Blob evidence 中的服务名 |
 
 ---
 
@@ -63,15 +59,15 @@ RAG Governance Service 使用 **Azure AI Foundry Agent + 内置 File Search 工�
 
 ### 3.1 核心目标
 
-RAG Governance Service 的**首要目的**是成为 Domain 4 的一个**可治理、可评估的 AI 服务目标（target）**，用于验证以下治理能力：
+RAG Governance Service 的首要目的是成为 Domain 4 的一个可治理、可评估的 AI 服务目标，用于验证：
 
-- **Groundedness / Citation Rate**：Foundry Agent 返回的引用文件片段，作为 citation 质量依据
-- **Safety Evaluator 覆盖**：RAG 服务作为 `target_type = rag_service` 可被 Foundry Evaluation 工具评估
-- **Red Teaming 目标**：RAG endpoint（经 APIM）可被 PyRIT 进行攻击测试
-- **Model Identity Capture**：Foundry tracing 自动记录模型名称和版本
-- **Evidence Chain**：APIM tracing + Foundry tracing 共同构成调用链证据
+- **Groundedness / Citation Rate**：RAG 返回的引用信息作为 citation 质量依据。
+- **Safety Evaluator 覆盖**：RAG 服务作为 `target_type = rag_service` 可被 Evaluation 工具评估。
+- **Red Teaming 目标**：RAG endpoint（经 APIM）可被 PyRIT 进行攻击测试。
+- **Model Identity Capture**：Web App 内部调用模型时写入 `model_name` / `model_version`。
+- **Evidence Chain**：APIM diagnostics + Web App telemetry + Blob evidence 共同构成证据链。
 
-RAG 作为一个**提供 AI Governance 知识问答能力的后端服务**，不包含任何用户界面（UI）或消费端应用层。消费端应用由步骤 9（Tier 1 Consumer App）负责。
+RAG 作为 AI Governance 知识问答后端服务，不包含用户界面或消费端应用层。消费端应用由步骤 9（Tier 1 Consumer App）负责。
 
 ### 3.2 知识库主题
 
@@ -79,43 +75,39 @@ RAG Service 的知识库聚焦于 **AI Governance 行业标准知识**，由用�
 
 - NIST AI 600-1（Generative AI）
 - NIST AI RMF（AI Risk Management Framework）
-- ISO/IEC 42001（AI Management Systems）
 - OWASP LLM Top 10
-- EU AI Act 关键条款摘要
-- 其他 AI Governance 相关行业标准文档
+- EU AI Act
+- Singapore Model AI Governance Framework
 
-知识库设计只服务于治理演示目的，不追求生产级知识覆盖。
+### 3.3 日志边界
 
-### 3.3 边界说明
+Blob evidence 沿用 `shared-observability` 既有格式，仅关注 LLM 调用证据：
 
-| 边界 | 说明 |
+| 内容 | 是否写入 Blob evidence |
 |---|---|
-| **不包含** | 用户界面、消费端 App、Tier 1 调用逻辑 |
-| **不包含** | Azure AI Search（Foundry File Search 内置向量存储，不需要外部 Search 资源） |
-| **不包含** | 独立的 embedding pipeline（Foundry 托管，自动处理） |
-| **不包含** | APIM 的创建和配置（APIM 是本步骤的前置条件） |
-| **不包含** | Evaluation 结果事件写入（由 evaluation-runner 负责，步骤 13） |
-| **不包含** | RAG 自身写 shared-observability（见 §6 说明） |
-| **包含** | Foundry Agent 创建与 File Search 工具配置 |
-| **包含** | PDF 知识库上传到 Foundry Agent vector store |
-| **包含** | APIM 后端配置（将 Foundry Agent endpoint 挂到 APIM） |
+| LLM input / request messages | 是 |
+| LLM output / response / citations | 是 |
+| LLM error / provider error body（如 SDK 暴露） | 是 |
+| `response_id`、`model_name`、`model_version`、`citations_count` | 是 |
+| 命中的 chunk 文本正文 | 否（metadata 只保留来源摘要） |
+| 内存检索实现细节 / 中间评分 | 否 |
 
 ---
 
 ## 4. 前置条件
 
-在开始本步骤之前，以下资源和配置**必须已存在**：
+| 前置项 | 设计要求 |
+|---|---|
+| App Service Plan | **复用现有**：`AIGovernDemoASP`（`AIGovernDemoRG`） |
+| RAG Web App | **待创建**：`AIGovernTrustworthyRAGApp`（`AIGovernTrustworthyRG`） |
+| RAG 运行时身份 | 使用现有 `L4_RAG_SERVICE_CLIENT_ID` / `L4_RAG_SERVICE_CLIENT_SECRET` |
+| Model deployment | `AIGovernTrustworthyDemoNativeModel` |
+| Observability Blob Archive | `aigoverntrustworthysa` / `ai-invocation-archive` |
+| Application Insights | 复用 `APPLICATIONINSIGHTS_CONNECTION_STRING` |
+| APIM | `/rag` 统一入口，后端指向 RAG Web App |
+| 知识材料 | `apps/rag-service/knowledge-base/` 下的 AI Governance PDF |
 
-| 前置项 | 资源名 / 变量 | 状态检查 |
-|---|---|---|
-| **Azure OpenAI Service（Domain 4 专用）** | `AIGovernTrustworthyAOAI`（`L4_AOAI_ENDPOINT`） | **硬前置条件**：RAG Agent 在此资源下创建；需已在 Portal 创建并连接到 Foundry Hub（LLD §4.2.3） |
-| **APIM 实例** | `AIGovernTrustworthyDemoAPIM`（`L4_APIM_GATEWAY_URL`） | **硬前置条件**：APIM 不存在时 RAG endpoint 无法进入治理链路；需优先在 Portal 创建（LLD §4.2.8） |
-| AI Foundry Hub + Project | `aigoverndemoaihub` / `aigovenaihubproject` | 已复用现有（LLD §4.1） |
-| LLM 生成模型 Deployment | `L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT`（在 `AIGovernTrustworthyAOAI` 下） | 在新 AOAI 资源下创建 `AIGovernTrustworthyDemoNativeModel` deployment |
-| Application Insights | `APPLICATIONINSIGHTS_CONNECTION_STRING` | 复用现有（LLD §4.2.1） |
-| RAG Service 运行时 SPN | `L4_RAG_SERVICE_CLIENT_ID` / `L4_RAG_SERVICE_CLIENT_SECRET` | 需已在 LLD §3.2.1 脚本中创建（用于调用 Foundry Agent） |
-
-> ⚠️ **Azure AI Search 不再是前置条件**：方案 C 使用 Foundry 内置 File Search，不依赖外部 Azure AI Search 资源。LLD §4.2.3 中的 `aigoverntrustworthysearch` 资源可用于其他步骤，步骤 2 不使用。
+**停止点**：如实现中确认需要新增 embedding deployment、vector store、Azure AI Search 或其他额外云资源，必须先征得用户同意。
 
 ---
 
@@ -123,251 +115,245 @@ RAG Service 的知识库聚焦于 **AI Governance 行业标准知识**，由用�
 
 ### 5.1 本地 PDF 目录
 
-原始知识材料（PDF 文件）统一放置在：
+原始知识材料统一放置在：
 
-```
+```text
 apps/rag-service/knowledge-base/
 ```
 
-**目录约定**：
+PDF 文件不提交到 Git。RAG Web App 启动时从该目录读取 PDF，完成解析与索引构建。
 
-- PDF 文件**不提交到 Git**（通过 `.gitignore` 排除）
-- 用户将 AI Governance 相关 PDF 放入此目录
-- 上传脚本从此目录读取所有 PDF，逐个上传到 Foundry Agent vector store
-- 新增文件后重新运行上传脚本即可更新知识库
+### 5.2 默认检索方式
 
-**当前已有文件（✅ 用户已放入）**：
+当前默认采用**代码式轻量级检索**：
 
-| 文件名 | 内容 |
-|---|---|
-| `NIST.AI.100-1.pdf` | NIST AI RMF 1.0（AI Risk Management Framework） |
-| `NIST.AI.600-1.pdf` | NIST AI 600-1（Generative AI 专项） |
-| `OJ_L_202401689_EN_TXT.pdf` | EU AI Act（欧盟 AI 法规正式文本） |
-| `sgmodelaigovframework2.pdf` | Singapore Model AI Governance Framework |
-| `OWASP-Top-10-for-LLMs-v2025.pdf` | OWASP LLM Top 10 2025 |
+1. 读取 PDF 文本。
+2. 按固定规则切块（例如字符窗口 + 适度 overlap）。
+3. 在进程内构建轻量级 lexical index。
+4. 查询时按关键词/词频相似度选出 top-N chunks。
+5. 将命中 chunks 作为上下文拼接到模型提示中。
+6. 返回答案时附带来源文件名、块序号或等效 citation。
 
-### 5.2 Foundry Agent File Search 工作原理
+该方案的目标是：
 
-Foundry Agent with File Search 接受 PDF 文件上传后：
+- 不依赖外部 vector DB；
+- 不依赖 Foundry file_search；
+- 不要求新增 embedding 资源；
+- 先满足 Demo 阶段对 citation 与可追溯性的要求。
 
-1. 自动完成文档解析（含 OCR）
-2. 自动完成文本切块
-3. 自动完成 embedding（使用 Foundry 内置 embedding 模型）
-4. 存储到 Foundry 内置 vector store（与 Agent 绑定）
-5. 在对话时自动执行 retrieve → generate，并在响应中附带 file citations
+### 5.3 Citation 格式
 
-上传工具：Foundry SDK（`azure-ai-projects` Python SDK）或 Portal UI。
+Citation 由应用程序在响应中自行组织，至少包含：
 
-### 5.3 Citation 格式说明
+- 来源文档名
+- 命中块的顺序编号或页码摘要（如果解析可得）
 
-Foundry Agent File Search 返回的 citation 格式为 Foundry 内置引用注释（file annotation），格式受 Foundry 平台控制，**不能自定义字段**（如 page_number、chunk_index）。
-
-可获得的 citation 信息：
-
-| 字段 | 可用性 |
-|---|---|
-| 引用文件名（上传的 PDF 文件名） | ✅ |
-| 引用片段文本 | ✅ |
-| 文件 ID（Foundry vector store file ID） | ✅ |
-| 页码 | ❌（Foundry 不暴露） |
-| 精确 chunk index | ❌ |
-
-> **已接受的限制**：citation 格式有限是选择方案 C 时已知的权衡。Domain 4 的 `Source Attribution Rate` 指标基于"是否有 citation"来计算，不要求精确页码。
+Domain 4 指标只要求能判断是否带 citation 以及 citation 数量，不要求完整页码精度。
 
 ---
 
 ## 6. 服务架构与 Observability 设计
 
-### 6.1 Foundry Agents API 调用模式
+### 6.1 调用链路
 
-Foundry Agent 使用 **OpenAI Assistants 兼容的有状态 API**（threads / messages / runs），而非简单的 request-response。
-
-每次问答的完整调用流程：
-
-```
-步骤 1  创建 Thread（对话会话）
-        POST /threads
-        → thread_id
-
-步骤 2  写入用户消息
-        POST /threads/{thread_id}/messages
-        body: { role: "user", content: "What does NIST AI 600-1 say about..." }
-
-步骤 3  创建 Run（触发 Agent 执行）
-        POST /threads/{thread_id}/runs
-        body: { assistant_id: L4_RAG_AGENT_ID }
-        → run_id
-
-步骤 4  轮询 Run 状态直到 "completed"
-        GET /threads/{thread_id}/runs/{run_id}
-        → status: "queued" | "in_progress" | "completed" | "failed"
-
-步骤 5  读取回答（含 file annotations / citations）
-        GET /threads/{thread_id}/messages
-        → messages[0].content[0].text.value        ← 回答文本
-        → messages[0].content[0].text.annotations  ← 引用列表（file_citation）
+```text
+Tier1 / Evaluation Runner / PyRIT
+        |
+        v
+APIM /rag
+        |  APIM diagnostics -> App Insights
+        v
+Azure Web App: AIGovernTrustworthyRAGApp
+        |-- PDF load / chunking / in-memory retrieval
+        |-- AOAI model call
+        |-- shared_observability.log_llm_call()
+        v
+Blob archive + answer/citations response
 ```
 
-**Python SDK 等价调用**（`azure-ai-projects`）：
+### 6.2 Web API 约定
+
+RAG Web App 暴露以下端点：
+
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `/health` | `GET` | 健康检查；返回 `{"status":"healthy","chunks_loaded":N}` |
+| `/responses` | `POST` | 主查询接口；返回 AI 回答 + citations + archive_id |
+| `/` | `GET` | 交互式 Chat UI（HTML 页面，供手动测试使用） |
+
+`POST /responses` 请求体：
+
+```json
+{
+  "input": "What are the four core functions of NIST AI RMF?"
+}
+```
+
+`POST /responses` 响应体：
+
+```json
+{
+  "output": "...",
+  "citations": [
+    {"source": "nist-ai-rmf.pdf", "page": 12, "chunk_preview": "..."}
+  ],
+  "archive_id": "arch_20260512_xxxxxxxx"
+}
+```
+
+### 6.3 Evidence 写入
+
+Web App 内部在模型调用成功或失败后调用：
 
 ```python
-from azure.ai.projects import AIProjectClient
-from azure.identity import ClientSecretCredential
-
-client = AIProjectClient(
-    endpoint=L4_AI_FOUNDRY_PROJECT_ENDPOINT,
-    credential=ClientSecretCredential(TENANT_ID, CLIENT_ID, CLIENT_SECRET)
-)
-thread = client.agents.create_thread()
-client.agents.create_message(thread.id, role="user", content=question)
-run = client.agents.create_and_process_run(thread.id, assistant_id=L4_RAG_AGENT_ID)
-messages = client.agents.list_messages(thread.id)
-answer = messages.data[0].content[0].text.value
-citations = messages.data[0].content[0].text.annotations
+shared_observability.log_llm_call(...)
 ```
 
-### 6.2 调用链路
+核心 metadata：
 
-```
-评估工具 / Tier 1 App（步骤 9）
-        │
-        ▼
-  APIM（AIGovernTrustworthyDemoAPIM）
-        │  ← APIM gateway tracing → App Insights
-        ▼
-  Azure AI Foundry Agents API
-  （project endpoint / agents / threads / runs）
-        │  ← Foundry tracing（自动）→ App Insights
-        │
-        ├─ [file search tool call] → Foundry 内置 vector store（5 个 PDF）
-        │
-        └─ [LLM generate] → Foundry 绑定的 LLM deployment
-                └─ 返回 answer text + file_citation annotations
-```
+| 字段 | 值 |
+|---|---|
+| `service_name` | `AIGovernTrustworthyDemo.RAGService` |
+| `target_type` | `rag_service` |
+| `target_id` | `AIGovernTrustworthyDemoRAGService` |
+| `response_id` | 模型 response id |
+| `model_name` / `model_version` | 实际模型部署与版本 |
+| `citations_count` | 返回 citation 数量 |
+| `extra_attributes.rag_app_name` | `AIGovernTrustworthyRAGApp` |
+| `extra_attributes.retrieval_mode` | `local_lexical_in_memory` |
 
-### 6.3 Observability 分层
+### 6.4 Observability 分层
 
 | 层 | 负责方 | 覆盖内容 |
 |---|---|---|
-| APIM gateway tracing | APIM（自动） | HTTP 请求/响应头、延迟、状态码 |
-| Foundry tracing | Foundry 平台（自动） | file search span、LLM generate span、model identity |
-| App Insights 统一查询 | 平台自动聚合 | APIM + Foundry trace 可在同一 App Insights 工作区查询 |
+| APIM gateway diagnostics | APIM | HTTP hop、状态码、延迟、W3C correlation |
+| Web App telemetry | RAG Web App | 请求日志、异常日志、应用级 trace |
+| shared-observability Blob evidence（RAG 服务内部） | RAG Web App 代码 | LLM input / output / error 完整证据；`target_type=rag_service`，`service_name=AIGovernTrustworthyDemo.RAGService` |
+| shared-observability Blob evidence（调用方侧，可选） | 上游 App（如 Tier1 App） | 调用 RAG API 的请求 / 响应证据；`target_type=rag_service`，`service_name` 为上游 App 名 |
+| App Insights 统一查询 | Azure Monitor | APIM + Web App + evidence thin event 聚合 |
 
-**RAG Service 自身不写 `shared-observability` evidence**，原因如下：
+### 6.5 调用方（上游 App）记录 RAG API 调用的规范
 
-- Foundry Agent 是托管服务，代码层不可直接插桩
-- Foundry tracing 已自动捕获 model identity（`model_name`、`model_version`）和 span 信息
-- APIM tracing 已覆盖 HTTP 层证据
-- `AIGovernTrustworthyLLMEvidence` 事件由**调用方**（Tier 1 App、evaluation-runner）在调用 RAG endpoint 后写入，`target_type = rag_service`，`target_id = AIGovernTrustworthyDemoRAGService`
+当 Tier 1 Consumer App 或 evaluation runner 调用 RAG 服务 API 时，**调用方自己也应调用 `log_llm_call()`** 记录这次外出调用，参数如下：
 
-### 6.4 `citations_count` 字段处理
+| 参数 | 值 |
+|---|---|
+| `service_name` | 调用方自己的服务名（如 `AIGovernTrustworthyDemo.Tier1App`） |
+| `target_type` | `"rag_service"` |
+| `target_id` | `"AIGovernTrustworthyDemoRAGService"` |
+| `target_endpoint` | RAG API 的实际 URL（经 APIM 或直连） |
+| `llm_input` | 发给 RAG 的请求体，如 `{"input": "..."}` |
+| `llm_output` | RAG 响应体，包含 `output`、`citations`、`archive_id` 等 |
+| `model_name` | `None`（调用方不知道 RAG 内部用了哪个模型） |
+| `response_id` | `None`，或 RAG 响应中的 `archive_id`（可写入 `extra_attributes.downstream_archive_id`） |
 
-`shared-observability.log_llm_call()` 的 `citations_count` 字段，由调用方（Tier 1 / evaluation-runner）从 Foundry Agent 响应体中解析 `text.annotations` 数量后填入。
+**这与 RAG 服务内部自己写的那条 evidence 不重复**：
+- RAG 服务内部记录的是"我向 LLM 发了什么 prompt，拿到了什么 answer"。
+- 调用方记录的是"我向 RAG API 发了什么问题，拿到了什么响应（含 citations）"。
+- 两条记录通过相同的 `trace_id` 关联，在 App Insights 中可以看到完整的两层调用。
+
+```python
+# Tier1 App 侧示例（调用 RAG 服务后记录）
+from shared_observability import log_llm_call
+
+rag_request = {"input": user_question}
+rag_response = call_rag_api(rag_request)   # 实际调用
+
+log_llm_call(
+    service_name="AIGovernTrustworthyDemo.Tier1App",
+    target_type="rag_service",
+    target_id="AIGovernTrustworthyDemoRAGService",
+    target_endpoint=RAG_API_URL,
+    llm_input=rag_request,
+    llm_output=rag_response,
+    credential=credential,
+    extra_attributes={
+        "downstream_archive_id": rag_response.get("archive_id"),
+    },
+)
+```
 
 ---
 
 ## 7. APIM 接入设计
 
-### 7.1 接入方式
+APIM 保留 `/rag` 作为统一治理入口，后端改为 RAG Web App：
 
-Foundry Agents API 是**有状态 API**（threads / messages / runs 三步交互），不是简单的 POST /query。APIM 代理的是各独立 REST hop，不是整体会话。
-
-接入方式：APIM 在 Foundry Project endpoint 的上层设置 pass-through 代理，对所有 `/agents/*`、`/threads/*` 路径的调用统一做 gateway tracing。
-
-```
-调用方
-  │  POST https://<APIM>/rag/threads               ← 创建 thread
-  │  POST https://<APIM>/rag/threads/{id}/messages  ← 写消息
-  │  POST https://<APIM>/rag/threads/{id}/runs      ← 触发执行
-  │  GET  https://<APIM>/rag/threads/{id}/runs/{r}  ← 查询状态
-  │  GET  https://<APIM>/rag/threads/{id}/messages  ← 读回答
-  ▼
-APIM backend → L4_AI_FOUNDRY_PROJECT_ENDPOINT
+```text
+https://aigoverntrustworthydemoapim.azure-api.net/rag
+    -> https://AIGovernTrustworthyRAGApp.azurewebsites.net/responses
 ```
 
-### 7.2 APIM 配置要点
+APIM 仍只做 pass-through、diagnostics、rate limit / policy，不做 RAG orchestration。
 
-| 配置项 | 值 |
-|---|---|
-| APIM API 名称 | `rag-service` |
-| API path prefix | `/rag` |
-| Backend URL | `L4_AI_FOUNDRY_PROJECT_ENDPOINT`（Foundry Project endpoint） |
-| 认证 | APIM Managed Identity 持有 `Azure AI User` 角色，或在 policy 中注入 Bearer token |
-| Diagnostics | 开启 `applicationInsights` logger，连接 `APPLICATIONINSIGHTS_CONNECTION_STRING` |
-| APIM policy | 透传 `traceparent` header；注入 `api-version` query param |
+---
 
-> APIM 配置文件存放于 `infra/apim/rag-service-api.xml`（待创建）。
+## 8. 身份与权限设计
 
-### 7.3 Evaluation / Red Teaming 的调用方式
-
-| 场景 | 调用方式 | APIM 是否经过 |
+| 身份 | 用途 | 状态 |
 |---|---|---|
-| 本地开发验证（`test_query.py`） | 直接使用 `azure-ai-projects` SDK，不经 APIM | 否 |
-| Foundry Evaluation（步骤 13） | 通过 Foundry Evaluation SDK，可直连 Agent | 否（Foundry 内部） |
-| PyRIT Red Teaming（步骤 15） | 经 APIM 的 HTTP endpoint 调用（需实现 thread/run 流程的封装） | 是 |
-| Tier 1 App 调用（步骤 9） | 经 APIM，使用 SDK 调用 Agents API | 是 |
+| Deploy SPN `AZ_DEPLOY_CLIENT_ID` | 创建 / 配置 Web App、RBAC、APIM | 复用 |
+| `AIGovernTrustworthyDemoRAGServiceSPN` | RAG Web App 运行时访问 AOAI、Blob、App Insights | 当前首选 |
+
+RAG Web App 运行时身份需要：
+
+- `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI`
+- `Storage Blob Data Contributor` on `aigoverntrustworthysa`
+- `Monitoring Metrics Publisher` on `AIGovernTrustworthyRG`
 
 ---
 
-## 8. 环境变量
+## 9. 环境变量
 
-步骤 2 相关环境变量（来自 `.env.local.L4`）：
+步骤 2 相关变量：
 
-| 变量名 | 值 / 用途 |
+| 变量名 | 用途 |
 |---|---|
-| `L4_RAG_SERVICE_CLIENT_ID` | 调用 Foundry Agent 的运行时 SPN Client ID |
-| `L4_RAG_SERVICE_CLIENT_SECRET` | 运行时 SPN Secret |
-| `AZURE_TENANT_ID` | 租户 ID |
-| `L4_RAG_AGENT_ID` | `asst_sFQ8LdzWZsExbdIYc8z2MkjV`（Agent776，已确认） |
-| `L4_RAG_VECTOR_STORE_ID` | `vs_oq4SujIx2VVD2F3atnX3XpHm`（status: completed，5 files） |
-| `L4_FOUNDRY_AGENT_BASE_URL` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/{sub}/resourceGroups/AIGovernDemoRG/providers/Microsoft.MachineLearningServices/workspaces/aigovenaihubproject` |
-| `L4_APIM_GATEWAY_URL` | APIM gateway URL（RAG endpoint 经 APIM 暴露后的地址） |
-| `L4_RAG_SERVICE_URL` | RAG Service 最终对外 URL（经 APIM，填入后供其他步骤使用） |
-
-> **Agent 架构说明（实际验证）**：Foundry Agent 存储于 Foundry 命名空间（非 AOAI Assistants）。  
-> API 访问须使用 **Foundry Agent REST 路径**（即 `L4_FOUNDRY_AGENT_BASE_URL`），token scope = `https://ml.azure.com`，  
-> **不能**使用 `https://aigoverntrustworthyaoai.openai.azure.com/openai/assistants/...`（返回 404）。  
-> `AIGovernTrustworthyAOAI` 的 AOAI Assistants 列表中另有一个脚本遗留的 `asst_rzetHmGXcOebswEMu4XIERpk`（无 vector store），可忽略或删除。
-
-> **Agent 创建方式（实际执行记录）**：Foundry Agent 通过 `ai.azure.com` Portal 手动创建，  
-> 使用 `AIGovernTrustworthyAOAI` 资源下的 `gpt-4o`（deployment `AIGovernTrustworthyDemoNativeModelgpt4o`），  
-> File Search 已启用，5 个 PDF 已通过 Portal 上传，Vector Store `vs_oq4SujIx2VVD2F3atnX3XpHm` 状态 completed。
+| `L4_APP_SERVICE_PLAN_NAME` | 现有 App Service Plan 名称（`AIGovernDemoASP`） |
+| `L4_APP_SERVICE_PLAN_RESOURCE_GROUP` | 现有 App Service Plan 所在资源组 |
+| `L4_RAG_APP_NAME` | RAG Web App 名称 |
+| `L4_RAG_APP_URL` | RAG Web App 直接 URL |
+| `L4_RAG_MODEL_DEPLOYMENT` | RAG 使用的模型 deployment |
+| `L4_RAG_RETRIEVAL_MODE` | 当前检索实现模式 |
+| `L4_RAG_SERVICE_URL` | 经 APIM 暴露后的 `/rag` URL |
 
 ---
 
-## 9. 开发产物清单
+## 10. 开发产物清单
 
-| 产物 | 路径 | 说明 |
-|---|---|---|
-| 知识库 PDF 目录 | `apps/rag-service/knowledge-base/` | 存放 AI Governance PDF 文件（不提交到 Git） |
-| PDF 上传脚本 | `apps/rag-service/scripts/upload_knowledge.py` | 将 knowledge-base/ 下的 PDF 上传到 Foundry Agent vector store |
-| Agent 创建脚本 | `apps/rag-service/scripts/create_agent.py` | 创建 Foundry Agent with File Search，记录 Agent ID |
-| Agent 调用验证脚本 | `apps/rag-service/scripts/test_query.py` | 直接调用 Foundry Agent endpoint，验证问答与 citation 返回 |
-| APIM API 配置 | `infra/apim/rag-service-api.xml` | APIM policy / backend 定义，backend 指向 Foundry Agent endpoint |
-| APIM 调用验证脚本 | `apps/rag-service/scripts/test_via_apim.py` | 经 APIM 调用 RAG，验证 APIM tracing 进入 App Insights |
+| 产物 | 路径 | 状态 | 说明 |
+|---|---|---|---|
+| 知识库 PDF 目录 | `apps/rag-service/knowledge-base/` | ✅ 已就绪 | 5 个 AI Governance PDF（NIST RMF、EU AI Act、OWASP LLM Top10、Singapore MAS、Singapore Model AI Gov Framework） |
+| RAG Web App 源码 | `apps/rag-service/app.py` | ✅ 已就绪 | FastAPI，BM25+文档别名提权，`shared-observability` 集成，Chat UI |
+| Dockerfile | `apps/rag-service/Dockerfile` | ✅ 已就绪 | 从仓库根构建；嵌入 `packages/shared-observability` |
+| Docker 镜像 | `aigoverndemoacr.azurecr.io/aigoverntrustworthyragapp:v1.0.2` | ✅ 已就绪 | 当前生产版本 |
+| Azure Web App | `AIGovernTrustworthyRAGApp` | ✅ 已就绪 | `canadaeast` region，Managed Identity = `L4_RAG_SERVICE_CLIENT_ID` |
+| Blob evidence 路径 | `aigoverntrustworthy/{yyyy}/{mm}/{dd}/AIGovernTrustworthyDemo.RAGService/rag_service/{archive_id}/` | ✅ 已验证 | 每次调用写入 input/output/metadata.json |
+| APIM 配置 | `apps/rag-service/scripts/` 或 `infra/apim/` | 🔲 待完成 | 将 `/rag` 后端切到 RAG Web App |
+| Blob viewer | `apps/blob-viewer.html` + `apps/launch_blob_viewer.py` | ✅ 已就绪 | 本地代理模式（端口 8888）查看 `ai-invocation-archive` |
 
----
-
-## 10. 实施顺序
-
-1. **确认前置条件**：确认 Foundry Project 可访问、LLM deployment（步骤 3）存在；APIM 可在 Agent 就绪后并行建立
-2. ~~**建立知识库目录**~~：✅ 已完成（5 个 PDF 已放入 `apps/rag-service/knowledge-base/`）
-3. ~~**创建 Foundry Agent**~~：✅ 已通过 Portal 完成。Agent `asst_sFQ8LdzWZsExbdIYc8z2MkjV`（名 Agent776），gpt-4o，File Search 已绑定
-4. ~~**上传知识库**~~：✅ 已通过 Portal 完成（5 个 PDF 上传并绑定至 Agent）
-5. **本地验证问答**：运行 `test_query.py`，确认 Agent 能正确回答 AI Governance 问题并返回 file citations
-6. **APIM 接入**：创建 APIM 实例（M4），配置 `infra/apim/rag-service-api.xml`，backend 指向 Foundry Project endpoint，开启 App Insights diagnostics
-7. **验证 APIM 链路**：运行 `test_via_apim.py`，确认经 APIM 调用成功，APIM tracing 进入 App Insights
-8. **记录 target registry 条目**：将 RAG Service 以 `target_type=rag_service` 写入治理目标清单，填入 `L4_RAG_SERVICE_URL`（经 APIM 的 `/rag` 路径）
+> 当前仓库中保留的 Hosted Agent 原型文件仅作为历史实验记录，不是当前批准路径。
 
 ---
 
-## 11. 风险与未决项
+## 11. 实施顺序
+
+1. ✅ 复用现有 App Service Plan `AIGovernDemoASP`。
+2. ✅ 创建 RAG Web App `AIGovernTrustworthyRAGApp`。
+3. ✅ 在应用内实现 PDF 解析、切块、BM25 进程内检索 + 文档别名提权、模型调用和 `log_llm_call()`。
+4. ✅ 配置 RAG Web App 使用 `L4_RAG_SERVICE_CLIENT_ID` 作为运行时身份。
+5. ✅ 通过直连 Web App 端点调用 RAG，确认答案、citation、Blob evidence、App Insights trace。
+6. 🔲 将 APIM `/rag` backend 切到 Web App `/responses` endpoint（待 APIM 建好后执行）。
+7. 🔲 通过 APIM 端点完整验证 RAG 调用链（含 APIM diagnostics 关联）。
+8. 🔲 更新 target registry 中 RAG endpoint 与 Web App metadata。
+
+---
+
+## 12. 风险与未决项
 
 | 风险 / 未决项 | 影响 | 缓解措施 |
 |---|---|---|
-| APIM 尚未创建（M4 待创建） | RAG endpoint 无法进入治理链路 | 先完成 Agent 创建和 PDF 上传验证，APIM 就绪后再接入 |
-| Foundry Agent 创建需要 `Azure AI Developer` 角色 | LLD §3.1.1 中已列出，需确认部署 SPN 已获得该权限 | 运行前用 `az role assignment list` 验证 |
-| LLM deployment（步骤 3）尚未完成 | Agent 创建后无法执行 generate | 可先创建 Agent、上传文件；绑定 LLM deployment 等步骤 3 后完成 |
-| Foundry Agent endpoint 格式与 APIM backend 配置兼容性 | APIM 代理 Foundry `threads/runs` API 可能需要 session-aware policy | 先用直连验证，再逐步接入 APIM |
-| Citation 格式受限（无页码） | `Source Attribution Rate` 指标只能统计 citation 存在性，无法精确定位 | 已在方案选择时接受此限制 |
-| `L4_RAG_AGENT_ID` 变量未在 LLD 中预定义 | LLD 环境变量清单不完整 | 需同步更新 LLD §5.2 新增此变量 |
+| 进程内检索规模有限 | 文档规模扩大后响应时间和相关性可能下降 | Demo 阶段先用轻量方案；如不足，再经用户同意评估 embedding / AI Search |
+| PDF 解析质量受文档格式影响 | citation 粒度或块边界可能不稳定 | 优先使用结构清晰的标准 PDF；必要时增加预处理规则 |
+| Web App 直连后端的安全策略需细化 | 可能需要后续增加 Access Restrictions / Easy Auth | 当前先完成最小可用路径；硬化作为后续步骤 |
+| 当前不使用 Hosted Agent tracing | RAG 路径缺少 Foundry 平台内部 span | 通过 APIM diagnostics + Web App telemetry + Blob evidence 保持证据链完整 |
