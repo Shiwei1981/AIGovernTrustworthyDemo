@@ -365,10 +365,10 @@ RAG Web App 运行时身份需要：
 | 知识库 PDF 目录 | `apps/rag-service/knowledge-base/` | ✅ 已就绪 | 5 个 AI Governance PDF（NIST RMF、EU AI Act、OWASP LLM Top10、Singapore MAS、Singapore Model AI Gov Framework） |
 | RAG Web App 源码 | `apps/rag-service/app.py` | ✅ 已就绪 | FastAPI，BM25+文档别名提权，`shared-observability` 集成，Chat UI |
 | Dockerfile | `apps/rag-service/Dockerfile` | ✅ 已就绪 | 从仓库根构建；嵌入 `packages/shared-observability` |
-| Docker 镜像 | `aigoverndemoacr.azurecr.io/aigoverntrustworthyragapp:v1.0.3` | ✅ 已就绪 | 当前生产版本 |
+| Docker 镜像 | `aigoverndemoacr.azurecr.io/aigoverntrustworthyragapp:v1.0.4` | ✅ 已就绪 | 当前生产版本（v1.0.4：FastAPI 监控修复、`/ui/responses` 代理端点） |
 | Azure Web App | `AIGovernTrustworthyRAGApp` | ✅ 已就绪 | `canadaeast` region，Managed Identity = `L4_RAG_SERVICE_CLIENT_ID` |
 | Blob evidence 路径 | `aigoverntrustworthy/{yyyy}/{mm}/{dd}/AIGovernTrustworthyDemo.RAGService/rag_service/{archive_id}/` | ✅ 已验证 | 每次调用写入 input/output/metadata.json |
-| APIM 配置 | `apps/rag-service/scripts/` 或 `infra/apim/` | 🔲 待完成 | 将 `/rag` 后端切到 RAG Web App，并补齐 `traceparent` 缺省注入策略 |
+| APIM 配置 | `infra/apim/setup-rag-api.sh` | ✅ 已完成 | `/rag` 后端已切到 RAG Web App；`traceparent` 注入策略（`exists-action="skip"`）已配置 |
 | Blob viewer | `apps/blob-viewer.html` + `apps/launch_blob_viewer.py` | ✅ 已就绪 | 本地代理模式（端口 8888）查看 `ai-invocation-archive` |
 
 > 当前仓库中保留的 Hosted Agent 原型文件仅作为历史实验记录，不是当前批准路径。
@@ -382,9 +382,9 @@ RAG Web App 运行时身份需要：
 3. ✅ 在应用内实现 PDF 解析、切块、BM25 进程内检索 + 文档别名提权、模型调用和 `log_llm_call()`。
 4. ✅ 配置 RAG Web App 使用 `L4_RAG_SERVICE_CLIENT_ID` 作为运行时身份。
 5. ✅ 通过直连 Web App 端点调用 RAG，确认答案、citation、Blob evidence、App Insights trace。
-6. 🔲 将 APIM `/rag` backend 切到 Web App `/responses` endpoint（待 APIM 建好后执行）。
-7. 🔲 通过 APIM 端点完整验证 RAG 调用链（含 APIM diagnostics 关联）。
-8. 🔲 更新 target registry 中 RAG endpoint 与 Web App metadata。
+6. ✅ 将 APIM `/rag` backend 切到 Web App `/responses` endpoint（`infra/apim/setup-rag-api.sh`）。
+7. ✅ 通过 APIM 端点完整验证 RAG 调用链（`/ui/responses → APIM → /responses`，Blob trace_id 非空，App Insights 三方写入）。
+8. ✅ 更新 target registry 中 RAG endpoint 与 Web App metadata（`infra/target-registry/targets.json`）。
 
 ---
 

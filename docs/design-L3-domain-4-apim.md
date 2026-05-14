@@ -114,7 +114,7 @@ APIM Product 用于将多个 API 组合打包，并控制访问策略（subscrip
 
 | API 名 | APIM 路径 | 后端目标类型 | 认证 scope | 实现状态 |
 |---|---|---|---|---|
-| `rag-service` | `/rag` | RAG Web App | N/A | 需更新为 Web App |
+| `rag-service` | `/rag` | RAG Web App | N/A | ✅ 已配置（Web App backend + `traceparent` 注入策略）|
 | `native-model` | `/native-model` | AOAI gpt-5.4-nano | `https://cognitiveservices.azure.com` | ⬜ 待配置 |
 | `finetune-model` | `/finetune-model` | AOAI fine-tune deployment | `https://cognitiveservices.azure.com` | ⬜ 待配置（后端未就绪）|
 | `foundry-agent` | `/foundry-agent` | Foundry 自定义 Agent | `https://ml.azure.com` | ⬜ 待配置（Agent 未创建）|
@@ -145,7 +145,7 @@ apiType:            http
 
 | Backend 名 | serviceUrl | 认证方式 | 状态 |
 |---|---|---|---|
-| `rag-webapp` | `https://AIGovernTrustworthyRAGApp.azurewebsites.net` | 无（APIM -> Web App 直接 HTTPS） | ⬜ 待更新 |
+| `rag-webapp` | `https://AIGovernTrustworthyRAGApp.azurewebsites.net` | 无（APIM -> Web App 直接 HTTPS） | ✅ 已配置（`set-backend-service` 内联策略）|
 | `aoai-native-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建 |
 | `aoai-finetune-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建（deployment 未就绪）|
 | `foundry-custom-agent` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject` | MSI，scope=`https://ml.azure.com` | ⬜ 待创建（Agent 未创建）|
@@ -624,7 +624,7 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
 |---|---|---|---|---|
 | `aoai-api-version` | `2025-01-01-preview` | Plain | AOAI API version | ⬜ 待创建 |
 | `copilot-directline-secret` | `<L4_COPILOT_DIRECTLINE_SECRET>` | Secret | Copilot Studio Direct Line token | ⬜ 待创建（Bot 创建后）|
-| `rag-webapp-endpoint` | `<L4_RAG_APP_URL>` | Plain | RAG Web App `/responses` endpoint | ⬜ 待创建 |
+| `rag-webapp-endpoint` | `https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net` | Plain | RAG Web App `/responses` endpoint | ✅ 已配置（policy 内 `set-backend-service` 内联，无需 Named Value）|
 
 ---
 
@@ -637,9 +637,9 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
  ✅ APIM MSI 启用（旧 Foundry Project 已授权）
 
 等 RAG Web App 步骤就绪（步骤 2）───────────────────────────────
- ⬜ 创建 `AIGovernTrustworthyRAGApp`
- ⬜ rag-service backend 更新到 Web App /responses endpoint
- ⬜ rag-service API diagnostics 复核
+ ✅ 创建 `AIGovernTrustworthyRAGApp`（v1.0.4，VNet 集成，WEBSITE_DNS_SERVER）
+ ✅ rag-service backend 更新到 Web App /responses endpoint（traceparent 注入策略）
+ ✅ rag-service API diagnostics 复核（App Insights 三方写入，trace_id 非空）
 
 等 AOAI 相关步骤就绪（步骤 3、4）──────────────────────────────
  ⬜ APIM MSI → Cognitive Services OpenAI User on AIGovernTrustworthyAOAI
@@ -673,7 +673,7 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
 | **实例** | MSI RBAC（AOAI）| ⬜ 待添加 |
 | **观测** | App Insights logger | ✅ 完成 |
 | **观测** | Gateway-level diagnostics | ✅ 完成 |
-| **API** | `rag-service` Web App backend + policy + diagnostics | ⬜ 待更新 |
+| **API** | `rag-service` Web App backend + policy + diagnostics | ✅ 完成 |
 | **API** | `native-model` | ⬜ 待配置 |
 | **API** | `finetune-model` | ⬜ 待配置（后端未就绪）|
 | **API** | `foundry-agent` | ⬜ 待配置（Agent 未创建）|

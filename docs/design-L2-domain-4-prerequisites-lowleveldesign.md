@@ -479,14 +479,26 @@ az storage container create \
 | Tier 1 Consumer App | `AIGovernTrustworthyDemoTier1App` | `L4_TIER1_APP_NAME` | `AIGovernTrustworthyDemo.Tier1App` | `L4_TIER1_APP_CLIENT_ID` |
 | Tier 2 Consumer App | `AIGovernTrustworthyDemoTier2App` | `L4_TIER2_APP_NAME` | `AIGovernTrustworthyDemo.Tier2App` | `L4_TIER2_APP_CLIENT_ID` |
 
+**RAG Web App 网络配置（已完成）**：
+
+| 配置项 | 值 | 说明 |
+|---|---|---|
+| VNet 集成 | `default` subnet（`AIGovernCanadaEastVNET`）| 使 Web App 可访问 VNet 内私有端点 |
+| `WEBSITE_DNS_SERVER` | `168.63.129.16` | 使用 Azure VNet 感知 DNS（解析私有 DNS 区域）|
+| `WEBSITE_VNET_ROUTE_ALL` | 不设置（默认 0）| 仅私有 IP 路由走 VNet，公网流量（AOAI）仍走互联网 |
+| `azure-api.net` 私有 DNS 区域 | `aigoverntrustworthydemoapim → 10.1.2.4` | 解析 APIM Internal VNet 网关 IP |
+| AOAI CNAME 绕行记录 | `cognitivecaeprod → trafficmanager.net`<br>`cognitivecaeprod-canadaeast-01.regional → cloudapp.azure.com` | 防止 VNet DNS 截断 AOAI 的公网解析链 |
+| Storage Account 私有端点 | `aigoverntrustworthysa → 10.1.1.4`（subnet-SA） | `publicNetworkAccess=Disabled`；Web App 通过 VNet 集成访问 |
+
+> **重要**：AOAI (`aigoverntrustworthyaoai`) 的 `publicNetworkAccess=Enabled`，通过公网直接可达。  
+> APIM Internal VNet 网关 IP `10.1.2.4` 的公共 DNS 已返回该 IP，但 VNet DNS 需 `azure-api.net` 私有区域辅助解析。
+
+
+
 **📋 用户操作步骤**：
 1. Portal → App Services → 创建 RAG Web App `AIGovernTrustworthyRAGApp`，选择现有 Plan `AIGovernDemoASP`，Runtime Python 3.11
 2. Portal → App Services → 后续分别创建 Tier 1 / Tier 2 两个 Web App，继续选择 Plan `AIGovernDemoASP`
 3. 创建后将实际 URL 填入 `.env.local.L4` 的 `L4_RAG_APP_URL`、`L4_TIER1_APP_URL`、`L4_TIER2_APP_URL`
-
----
-
-#### 4.2.10 VM（Hugging Face 模型）
 
 > **✅ 已确认（S3）**：CPU-only，使用最小可运行量化模型。模型大小不影响演示效果。
 
@@ -632,9 +644,9 @@ L4_FOUNDRY_AGENT_ID=<to-be-created>
 
 # ── RAG Governance Service（步骤 2：Web App + lightweight retrieval）────────
 L4_RAG_APP_NAME=AIGovernTrustworthyRAGApp
-L4_RAG_APP_URL=<to-be-deployed>                    # https://AIGovernTrustworthyRAGApp.azurewebsites.net
+L4_RAG_APP_URL=https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net  # https://AIGovernTrustworthyRAGApp.azurewebsites.net
 L4_RAG_RETRIEVAL_MODE=local_lexical_in_memory
-L4_RAG_SERVICE_URL=<to-be-configured>              # APIM /rag base URL；RAG Web App 的 /ui/responses 服务端代理读取此值
+L4_RAG_SERVICE_URL=https://aigoverntrustworthydemoapim.azure-api.net/rag  # APIM /rag base URL；RAG Web App 的 /ui/responses 服务端代理读取此值
 
 # ── Azure AI Search（RAG fallback；主路径不依赖）───────────────────────────
 L4_AI_SEARCH_NAME=aigoverntrustworthysearch
@@ -685,7 +697,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | M3 | Observability Blob Container | `ai-invocation-archive` | — | — | N/A | `L4_OBSERVABILITY_BLOB_CONTAINER` | 已手动创建 |
 | M4 | API Management | `AIGovernTrustworthyDemoAPIM` | `AIGovernTrustworthyRG` | Developer stv2，canadaeast，VNet Internal | `AIGovernTrustworthyDemo-APIM` | `L4_APIM_GATEWAY_URL` | ✅ 已创建，VNet Internal 配置完成 |
 | M5 | App Service Plan（复用） | `AIGovernDemoASP` | `AIGovernDemoRG` | B3，Linux，canadaeast | 现有资源 | `L4_APP_SERVICE_PLAN_NAME` | 已存在 |
-| M6 | RAG Web App | `AIGovernTrustworthyRAGApp` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-RAGService` | `L4_RAG_APP_URL` | 待创建 |
+| M6 | RAG Web App | `AIGovernTrustworthyRAGApp` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5；v1.0.4；VNet 集成（default subnet）；WEBSITE_DNS_SERVER=168.63.129.16 | `AIGovernTrustworthyDemo-RAGService` | `L4_RAG_APP_URL` | ✅ 已创建并部署（v1.0.4，含 /ui/responses 代理，APIM 全链路 trace_id 验证通过）|
 | M7 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier1App` | `L4_TIER1_APP_URL` | 待创建 |
 | M8 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier2App` | `L4_TIER2_APP_URL` | 待创建 |
 | M9 | Copilot Studio Agent | `AIGovernTrustworthyDemoCopilotStudioAgent` | Copilot Studio（Power Platform） | — | N/A | `L4_COPILOT_STUDIO_BOT_ID`、`L4_COPILOT_STUDIO_DIRECTLINE_SECRET` | 待创建 |
