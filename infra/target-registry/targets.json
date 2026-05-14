@@ -18,31 +18,20 @@
       "notes": "Step 3. Direct AOAI endpoint verified 2026-05-13. APIM proxy path /native-model pending (APIM MSI RBAC needed)."
     },
     {
-      "target_id": "asst_sFQ8LdzWZsExbdIYc8z2MkjV",
+      "target_id": "AIGovernTrustworthyDemoRAGService",
       "target_type": "rag_service",
-      "display_name": "RAG Governance Service (Agent776)",
-      "model_name": "gpt-4o",
-      "model_version": "2024-11-20",
-      "aoai_resource": "AIGovernTrustworthyAOAI",
-      "deployment_name": "AIGovernTrustworthyDemoNativeModelgpt4o",
-      "agent_id": "asst_sFQ8LdzWZsExbdIYc8z2MkjV",
-      "agent_name": "Agent776",
-      "vector_store_id": "vs_oq4SujIx2VVD2F3atnX3XpHm",
-      "foundry_agent_base_url": "https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42-0493-49ff-b3c8-45df3ae06821/resourceGroups/AIGovernDemoRG/providers/Microsoft.MachineLearningServices/workspaces/aigovenaihubproject",
+      "display_name": "RAG Governance Service (Web App)",
+      "app_service_name": "AIGovernTrustworthyRAGApp",
+      "app_service_plan": "AIGovernDemoASP",
+      "model_deployment": "AIGovernTrustworthyDemoNativeModel",
+      "retrieval_mode": "local_lexical_in_memory",
       "endpoint": "https://aigoverntrustworthydemoapim.azure-api.net/rag",
+      "backend_url": "<to-be-deployed>",
       "apim_path": "/rag",
-      "apim_operations": [
-        "POST /rag/threads",
-        "POST /rag/threads/{threadId}/messages",
-        "POST /rag/threads/{threadId}/runs",
-        "GET  /rag/threads/{threadId}/runs/{runId}",
-        "GET  /rag/threads/{threadId}/messages"
-      ],
-      "apim_note": "VNet Internal — endpoint reachable only from within AIGovernCanadaEastVNET. Direct Foundry API also available via foundry_agent_base_url.",
+      "apim_operation": "POST /rag/responses",
       "auth": "entra",
-      "token_scope": "https://ml.azure.com",
-      "status": "active",
-      "notes": "Step 2. Foundry Agent with File Search. 5 PDFs (AI Governance standards). Vector store completed. Direct Foundry API verified 2026-05-13. APIM rag-service configured 2026-05-13."
+      "status": "pending",
+      "notes": "Step 2. Hosted Agent path abandoned due to region limitation. Current approved design is Azure Web App on existing AIGovernDemoASP with lightweight code-based retrieval and no default vector store dependency."
     },
     {
       "target_id": "AIGovernTrustworthyDemoFineTuneModel",

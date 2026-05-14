@@ -184,12 +184,18 @@ POLICY_XML='<policies>
   </on-error>
 </policies>'
 
-az apim api policy create \
-  --resource-group "$RESOURCE_GROUP" \
-  --service-name "$APIM_NAME" \
-  --api-id "$API_ID" \
-  --value "$POLICY_XML" \
-  --output none
+SUB=$(az account show --query id -o tsv)
+POLICY_URL="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.ApiManagement/service/${APIM_NAME}/apis/${API_ID}/policies/policy?api-version=2022-08-01"
+POLICY_BODY=$(python3 -c "import json,sys; print(json.dumps({'properties':{'value':open('/dev/stdin').read(),'format':'rawxml'}}))" <<< "$POLICY_XML")
+TMPFILE=$(mktemp /tmp/apim-policy-XXXX.json)
+echo "$POLICY_BODY" > "$TMPFILE"
+az rest --method put --url "$POLICY_URL" \
+  --headers "Content-Type=application/json" \
+  --body "@$TMPFILE" --output none 2>/dev/null || \
+az rest --method put --url "$POLICY_URL" \
+  --headers "Content-Type=application/json" \
+  --body "@$TMPFILE" 1>/dev/null
+rm -f "$TMPFILE"
 echo "    Policy applied."
 
 # ---------------------------------------------------------------------------
@@ -209,7 +215,7 @@ for t in data["targets"]:
         t["backend_url"] = "$RAG_BACKEND_URL"
         t["status"] = "active"
         t["notes"] = (
-            "Step 2. Web App v1.0.2 deployed to canadaeast. "
+            "Step 2. Web App v1.0.3 deployed to canadaeast. "
             "APIM /rag path configured to proxy POST /responses and GET /health. "
             "APIM internal VNet — access via VNet or APIM gateway URL."
         )
