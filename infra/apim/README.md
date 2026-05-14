@@ -41,6 +41,10 @@ bash infra/apim/setup-rag-api.sh
    - 错误处理：502 + JSON 错误体
 5. 更新 `infra/target-registry/targets.json` 中的 `backend_url` 和 `status`
 
+RAG Web App 自带的手动测试 UI 不让浏览器直连 Internal APIM；UI 调用先进入 Web App 的
+`/ui/responses` 服务端代理，再由该代理读取 `L4_RAG_SERVICE_URL`（即 APIM `/rag` base URL）
+发起后端调用。
+
 ## 验证（执行后）
 
 ```bash
@@ -57,4 +61,3 @@ curl -s -X POST https://aigoverntrustworthydemoapim.azure-api.net/rag/responses 
 - Native Model `/native-model` API：需先给 APIM MSI 授 `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI`
 - 可选：在 `POST /responses` 上加 JWT 验证策略（`<validate-jwt>`），要求调用方持有有效 Entra token
 - 可选：通过 Azure Front Door / App Gateway 为 Internal VNet APIM 提供公网入口
-

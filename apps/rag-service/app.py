@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
-import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
+import fastapi
 import pypdf
 from azure.core.credentials import TokenCredential
 from azure.identity import ClientSecretCredential, DefaultAzureCredential, get_bearer_token_provider
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse, Response
 from openai import AzureOpenAI
 from pydantic import BaseModel
 from rank_bm25 import BM25Okapi
@@ -317,15 +320,40 @@ def _configure_telemetry() -> None:
     log.info("Azure Monitor telemetry configured for service %s", SERVICE_NAME)
 
 
+def _get_ui_proxy_target_url() -> str:
+    base_url = os.getenv("L4_RAG_SERVICE_URL", "").strip()
+    if not base_url:
+        raise RuntimeError("Missing required environment variable: L4_RAG_SERVICE_URL")
+    return base_url.rstrip("/") + "/responses"
+
+
+def _proxy_ui_request(input_text: str) -> tuple[int, bytes, str]:
+    body = json.dumps({"input": input_text}).encode("utf-8")
+    request = urllib_request.Request(
+        _get_ui_proxy_target_url(),
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=120) as response:
+            content_type = response.headers.get("Content-Type", "application/json")
+            return response.status, response.read(), content_type
+    except urllib_error.HTTPError as exc:
+        content_type = exc.headers.get("Content-Type", "application/json")
+        return exc.code, exc.read(), content_type
+
+
+_configure_telemetry()
+
+
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Telemetry init runs in background so it never blocks the startup probe.
-    threading.Thread(target=_configure_telemetry, daemon=True, name="telemetry-init").start()
+async def lifespan(app: fastapi.FastAPI):
     _build_index()
     yield
 
 
-app = FastAPI(title="AIGovernTrustworthyRAGApp", lifespan=lifespan)
+app = fastapi.FastAPI(title="AIGovernTrustworthyRAGApp", lifespan=lifespan)
 
 
 class QueryRequest(BaseModel):
@@ -469,6 +497,15 @@ def query(req: QueryRequest) -> QueryResponse:
         raise HTTPException(status_code=502, detail=f"{type(exc).__name__}: {exc}") from exc
 
 
+@app.post("/ui/responses")
+def ui_query(req: QueryRequest) -> Response:
+    try:
+        status_code, payload, content_type = _proxy_ui_request(req.input)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"UI proxy failed: {type(exc).__name__}: {exc}") from exc
+    return Response(content=payload, status_code=status_code, media_type=content_type.split(";", 1)[0])
+
+
 _CHAT_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -540,7 +577,7 @@ async function send(){
   chat.appendChild(thinking);
   chat.scrollTop=chat.scrollHeight;
   try{
-    const r=await fetch('/responses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:q})});
+    const r=await fetch('/ui/responses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:q})});
     const d=await r.json();
     chat.removeChild(thinking);
     if(r.ok){

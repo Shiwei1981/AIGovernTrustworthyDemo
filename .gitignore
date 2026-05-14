@@ -4,6 +4,9 @@
 !.env.example
 !.env.*.example
 
+# Knowledge base PDFs (large files, user-supplied)
+apps/rag-service/knowledge-base/*.pdf
+
 # Python
 __pycache__/
 *.py[cod]
@@ -12,6 +15,9 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
+build/
+dist/
 
 # VS Code
 .vscode/
