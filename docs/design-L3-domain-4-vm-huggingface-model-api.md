@@ -6,7 +6,7 @@
 
 步骤 5 在本项目中的定位，不是为了单独搭一台“能跑模型的 VM”，而是建立一个能够被 Domain 4 持续纳管的 **VM-hosted Hugging Face text model target**，为后续 APIM 接入、VM 侧 App Insights 观测、调用方 shared-observability、evaluation、red teaming 和 dashboard 指标提供基础对象。
 
-> **当前状态（2026-05-15）**：步骤 5 尚未开始实施；但低级别设计、APIM 预留路径、target registry 占位、`.env.local.L4` 变量合同已经存在。本轮先把步骤 5 的需求定稿。
+> **当前状态（2026-05-15）**：VM `AIGovernTrustworthyDemoPhi3VM` 已手动创建（Canada East，Standard B4s v2，Ubuntu 26.04 LTS Gen2）；运行时安装（llama.cpp server + Python sidecar）和模型下载尚未开始。低级别设计、APIM 预留路径、target registry 占位、`.env.local.L4` 变量合同均已完成。
 
 **关联文档**：
 
@@ -116,6 +116,7 @@
    - `L4_VM_PUBLIC_DNS`
    - `L4_VM_MODEL_NAME`
    - `L4_VM_MODEL_API_PORT`
+
 ### 5.3 模型选择与运行时需求
 
 1. 步骤 5 必须选择**文本类** Hugging Face 模型，不引入图像、语音、视频或多模态模型。
@@ -150,11 +151,11 @@
 
 ### 5.5 网络与安全边界需求
 
-1. VM endpoint 默认只在内网开放，不提供公网直接访问能力。
+1. VM 已配置 Public IP / DNS（`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`）。**推理端口 `11434/TCP` 不得对公网开放**；NSG 必须只允许受控 VNet / 内网来源入站。
 2. Network Security Group 必须只允许受控 VNet / 内网来源访问 `11434/TCP`。
 3. APIM 子网到 VM 子网之间必须具备可路由性，以便后续 `/vm-model` 可以代理到 VM 后端。
 4. 步骤 5 的最小验证可先使用内网直连 `http://<L4_VM_PRIVATE_IP>:11434`；但长期治理入口必须预留给 APIM `/vm-model`。
-5. 直接访问 VM API 时不依赖 Entra / API Key；其安全边界依赖“无公网 + NSG + 受控内网来源”。
+5. 直接访问 VM API 时不依赖 Entra / API Key；其安全边界依赖"NSG + 受控内网来源"约束。Public IP 仅用于 SSH 管理，绝不用于暴露推理端口。
 6. 由于 VM 后端默认无认证，后续 APIM 转发时必须遵守现有 APIM 文档的要求，移除上游 `Authorization` header，避免 token 泄漏到 VM。
 
 ### 5.6 VM 侧 App Insights 与 trace 记录需求
@@ -335,7 +336,7 @@
 3. 已确认 VM 规格以“最低成本且可稳定跑通 smoke test”为优先，不再把 `Standard_D4s_v3` 视为唯一固定规格。
 4. 已确认模型从 HuggingFace Hub 直接下载 GGUF 文件，推理运行时固定为 `llama.cpp server`，以模拟客户真实 HF 部署路径。
 5. 已确认最小 API 合同至少包括 `POST /v1/chat/completions`，并尽量贴近通用 OpenAI-compatible 格式。
-6. 已确认 VM 只走内网访问，不开公网，并为后续 APIM `/vm-model` 保留兼容性。
+6. 已确认 VM 推理端口（`11434/TCP`）不对公网开放；VM 虽配置了 Public IP（仅用于 SSH 管理），NSG 必须严格限制推理端口仅允许受控内网来源；长期治理入口通过 APIM `/vm-model` 路由。
 7. 已确认 VM 服务自身不接入 shared-observability，但应尽可能接入 App Insights、承接 `trace_id` 并记录统一字段。
 8. 已确认步骤 5 与步骤 6 的边界：步骤 5 先交付可运行 target + VM 侧 App Insights，步骤 6 再由调用方补齐 shared-observability 与完整证据链。
 9. 已确认该目标在 Domain 4 中始终保持独立身份：`target_type = vm_huggingface_model`，不与 Azure 托管模型合并。
