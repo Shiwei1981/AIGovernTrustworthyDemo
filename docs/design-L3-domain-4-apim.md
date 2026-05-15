@@ -40,7 +40,7 @@
     ┌─────┼─────┬──────┬──────┬────────┬──────────┐
     ▼     ▼     ▼      ▼      ▼        ▼          ▼
 Hosted AOAI  AOAI  Foundry DirectLine VM:11434  App
-Agent  Native FT    Custom  (Copilot)  (ollama)  Service
+Agent  Native FT    Custom  (Copilot)  (llama.cpp)  Service
 (RAG)  Model  Model Agent
 ```
 
@@ -119,7 +119,7 @@ APIM Product 用于将多个 API 组合打包，并控制访问策略（subscrip
 | `finetune-model` | `/finetune-model` | AOAI fine-tune deployment | `https://cognitiveservices.azure.com` | ⬜ 待配置（后端未就绪）|
 | `foundry-agent` | `/foundry-agent` | Foundry 自定义 Agent | `https://ml.azure.com` | ⬜ 待配置（Agent 未创建）|
 | `copilot-studio` | `/copilot-studio` | Direct Line（Copilot Studio） | DirectLine secret | ⬜ 待配置（Agent 未创建）|
-| `vm-model` | `/vm-model` | VM ollama API（phi3:mini） | 无（VNet 内访问）| ⬜ 待配置（VM 未创建）|
+| `vm-model` | `/vm-model` | VM llama.cpp API（Phi-3-mini-4k-instruct） | 无（VNet 内访问）| ⬜ 待配置（VM 未创建）|
 | `tier1-app` | `/tier1` | Tier 1 Consumer App Service | `https://management.azure.com` | ⬜ 待配置（App 未部署）|
 | `tier2-app` | `/tier2` | Tier 2 Consumer App Service | `https://management.azure.com` | ⬜ 待配置（App 未部署）|
 
@@ -153,11 +153,11 @@ apiType:            http
 | `aoai-finetune-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建（deployment 未就绪）|
 | `foundry-custom-agent` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject` | MSI，scope=`https://ml.azure.com` | ⬜ 待创建（Agent 未创建）|
 | `copilot-studio-directline` | `https://directline.botframework.com/v3/directline` | Named Value `copilot-directline-secret`（Header `Authorization: Bearer {secret}`）| ⬜ 待创建（Agent 未创建）|
-| `vm-ollama` | `http://<L4_VM_PRIVATE_IP>:11434` | 无 | ⬜ 待创建（VM 未创建）|
+| `vm-llama-server` | `http://<L4_VM_PRIVATE_IP>:11434` | 无 | ⬜ 待创建（VM 未创建）|
 | `tier1-app-service` | `https://aigoverntrustworthydemotier1app.azurewebsites.net` | Entra（透传客户端 token）| ⬜ 待创建（App 未部署）|
 | `tier2-app-service` | `https://aigoverntrustworthydemotier2app.azurewebsites.net` | Entra（透传客户端 token）| ⬜ 待创建（App 未部署）|
 
-> **注意**：APIM Internal VNet 模式下，`vm-ollama` 后端使用 VM 私有 IP，  
+> **注意**：APIM Internal VNet 模式下，`vm-llama-server` 后端使用 VM 私有 IP，  
 > 需要 APIM 子网和 VM 子网之间的 VNet Peering 或同一 VNet 内可路由。
 
 ### 6.2 MSI 认证说明
@@ -169,7 +169,7 @@ APIM 对需要 Azure 身份的后端使用 System-Assigned MSI 自动获取 toke
 | Azure OpenAI（AOAI chat completions） | `https://cognitiveservices.azure.com` | `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI` ✅ |
 | App Service（Tier1/Tier2） | 透传客户端 token（不由 MSI 注入）| — |
 | Copilot Studio Direct Line | DirectLine secret（Named Value）| — |
-| VM ollama | 无 auth | — |
+| VM llama.cpp | 无 auth | — |
 
 **AOAI MSI RBAC（已执行）**：
 ```bash
@@ -442,13 +442,13 @@ serviceUrl:   https://directline.botframework.com/v3/directline
 
 ---
 
-### 7.6 `vm-model` — VM Hugging Face 模型（phi3:mini via ollama）⬜
+### 7.6 `vm-model` — VM Hugging Face 模型（Phi-3-mini-4k-instruct via llama.cpp server）⬜
 
 **状态**：待配置（VM 未创建）
 
 **前端**：
 ```
-displayName:  VM Hugging Face Model (phi3:mini)
+displayName:  VM Hugging Face Model (Phi-3-mini-4k-instruct)
 path:         /vm-model
 serviceUrl:   http://<L4_VM_PRIVATE_IP>:11434
 ```
@@ -457,15 +457,15 @@ serviceUrl:   http://<L4_VM_PRIVATE_IP>:11434
 
 | Operation ID | 方法 | 路径模板 | 说明 |
 |---|---|---|---|
-| `chat-completions` | POST | `/v1/chat/completions` | ollama OpenAI-compatible chat |
-| `tags` | GET | `/api/tags` | 查询已加载模型列表（health check）|
+| `chat-completions` | POST | `/v1/chat/completions` | llama.cpp OpenAI-compatible chat |
+| `health` | GET | `/health` | 服务就绪检查（llama.cpp server 原生健康端点）|
 
 **Inbound Policy**（API 级别）：
 ```xml
 <policies>
   <inbound>
     <base />
-    <!-- VM ollama 无认证，仅限 VNet 内访问 -->
+    <!-- VM llama.cpp server 无认证，仅限 VNet 内访问 -->
     <!-- 移除客户端携带的 Authorization header，避免 token 泄漏到 VM -->
     <set-header name="Authorization" exists-action="delete" />
     <!-- 注入 Governance 追踪 header -->

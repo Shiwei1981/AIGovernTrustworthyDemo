@@ -428,7 +428,7 @@ az storage container create \
 | 包名 | `shared_observability` |
 | 语言 | Python 3.11 |
 | 责任 | 记录 Python 侧 LLM 调用完整证据；写入薄 App Insights evidence 事件；生成 Blob archive 路径 |
-| 接入对象 | RAG Service、Tier 1、Tier 2、VM API、Evaluation runner、PyRIT runner、各类 connector 脚本 |
+| 接入对象 | RAG Service、Tier 1、Tier 2、Evaluation runner、PyRIT runner、各类 connector 脚本；VM 模型服务自身不接入 |
 
 #### 4.2.8 Azure API Management
 
@@ -516,33 +516,53 @@ az storage container create \
 |---|---|
 | 资源名 | `AIGovernTrustworthyDemoVM` |
 | OS | Ubuntu 22.04 LTS |
-| VM Size | `Standard_D4s_v3`（4 vCPU，16GB RAM，CPU-only） |
+| VM Size | 优先最低成本、能稳定运行目标模型的 CPU-only SKU（`Standard_D4s_v3` 仅作保守 fallback） |
 | Public IP | 否（仅内网访问；由 runner / app 直连） |
 | Network Security Group | 仅允许受控 VNet / 内网来源对 11434 端口的入站 |
-| OS Disk | 64GB（足够放 ollama + 模型） |
+| OS Disk | 64GB（足够放 llama.cpp server + 模型） |
 
 **选定模型**：[`microsoft/Phi-3-mini-4k-instruct`](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct)（GGUF Q4_K_M 量化）
 
 | 属性 | 值 |
 |---|---|
 | 模型大小（Q4_K_M GGUF） | ~2.2 GB |
-| 内存占用 | ~3-4 GB（D4s_v3 的 16GB 完全够用） |
+| 内存占用 | ~3-4 GB（实现时以“最低成本 SKU + 安全余量”校验） |
 | 推理速度（CPU） | ~3-5 tokens/s（够演示） |
 | 许可证 | MIT（无商用限制） |
-| API 格式 | OpenAI-compatible（via ollama） |
+| API 格式 | OpenAI-compatible（via llama.cpp server + Python sidecar） |
 
-**运行方式**：[ollama](https://ollama.com)（单二进制，自动下载 GGUF，暴露 OpenAI 兼容 API 在 `:11434`）
+**运行方式**：[llama.cpp server](https://github.com/ggerganov/llama.cpp)（`llama-server` 二进制，原生 OpenAI-compatible API，内部端口 `11435`）+ Python FastAPI sidecar（外部端口 `11434`，承接 `traceparent`，写入 App Insights）
+
+> **补充边界**：VM 模型服务自身不接入 `shared-observability`。模型服务侧尽可能只接入 App Insights / OpenTelemetry，承接 `traceparent` 并记录轻量级统一字段；完整 `input` / `output` evidence 由未来调用方负责。
 
 ```bash
 # VM 初始化脚本（在 VM 内执行）
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull phi3:mini          # 拉取 Phi-3-mini（~2.2GB）
-ollama serve &                  # 默认监听 0.0.0.0:11434
+# 1. 安装 HuggingFace CLI
+pip install huggingface-hub
+
+# 2. 下载模型 GGUF
+huggingface-cli download microsoft/Phi-3-mini-4k-instruct-gguf \
+  --include "Phi-3-mini-4k-instruct-q4.gguf" \
+  --local-dir /opt/models/phi3
+
+# 3. 安装 llama.cpp server（预编译二进制）
+# 参考 https://github.com/ggerganov/llama.cpp/releases
+# llama-server 监听内部端口 11435
+llama-server \
+  --model /opt/models/phi3/Phi-3-mini-4k-instruct-q4.gguf \
+  --alias Phi-3-mini-4k-instruct \
+  --host 0.0.0.0 --port 11435 &
+
+# 4. 启动 Python sidecar（外部端口 11434，代理到 llama-server）
+# sidecar 代码在 apps/vm-model/sidecar.py
+uvicorn sidecar:app --host 0.0.0.0 --port 11434 &
+
 # 验证
-curl http://localhost:11434/api/tags
+curl http://localhost:11435/health
+curl http://localhost:11434/health
 curl http://localhost:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"phi3:mini","messages":[{"role":"user","content":"hello"}]}'
+  -d '{"model":"Phi-3-mini-4k-instruct","messages":[{"role":"user","content":"hello"}]}'
 ```
 
 **VM 创建命令**：
@@ -736,7 +756,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | A13 | Azure OpenAI 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModel` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT` |
 | A14 | Azure OpenAI Fine-tune Deployment | `AIGovernTrustworthyDemoFineTuneModel` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_FINETUNE_MODEL_DEPLOYMENT` |
 | A15 | Azure AI Foundry Agent | `AIGovernTrustworthyDemoFoundryAgent` | `AIGovernDemoRG / aigovenaihubproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_AGENT_ID` |
-| A16 | VM 模型安装 | Phi-3-mini via ollama | VM 内部 | SSH + 初始化脚本 | N/A | — |
+| A16 | VM 模型安装 | Phi-3-mini via HF CLI + llama.cpp server | VM 内部 | SSH + 初始化脚本 | N/A | — |
 | A17 | RBAC 角色授权 | Deploy SPN + RAG / Tier1 / Tier2 等应用运行时 SPN | 各资源作用域 | `az role assignment create` | N/A | — |
 
 ---
@@ -761,7 +781,7 @@ L4_TARGET_REGISTRY_VERSION=1
 |---|---|---|---|
 | S1 | RAG 主路径锁定为 Azure Web App + 代码切块 + 进程内轻量级检索；AI Search schema 仅保留 fallback | 步骤 2（RAG Service） | ✅ 已确认 |
 | S2 | Fine-tune：JSONL chat completion 格式，5000 条 AI 生成 Q&A，主题为 AI Governance，要求尽量覆盖用户上传的 5 个 PDF；Q&A 生成阶段复用 native model `gpt-5.4-nano`，真正 fine-tune base model 使用 `gpt-4.1`；训练文件上传复用 `.env.local.L4` 中既有 storage，且问答对需在 `docs/finetune-qa-archive/` 留档 | 步骤 4（fine-tune 模型） | ✅ 已确认 |
-| S3 | VM CPU-only，Standard_D4s_v3，使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF，~2.2GB），通过 ollama 暴露 OpenAI 兼容 API | 步骤 5（VM 模型） | ✅ 已确认 |
+| S3 | VM CPU-only，优先最低成本可运行 SKU，使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF，~2.2GB），通过 HF CLI 下载 + llama.cpp server（内部端口 11435）+ Python sidecar（外部端口 11434）暴露 OpenAI 兼容 API | 步骤 5（VM 模型） | ✅ 已确认 |
 | S4 | Observability Blob archive 全新建设，由用户手动创建，当前已创建（`aigoverntrustworthysa` + `ai-invocation-archive`） | 步骤 1（基础设施） | ✅ 已确认 |
 | S5 | App Insights 复用现有实例（`APPLICATIONINSIGHTS_CONNECTION_STRING`） | 步骤 1（基础设施） | ✅ 已确认 |
 | S6 | 复用现有 App Service Plan（`AIGovernDemoASP`，Linux，canadaeast）；步骤 2 创建 RAG Web App，步骤 9/10 可继续复用 | 步骤 2/9/10 | ✅ 已确认 |
@@ -827,7 +847,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | DD-002 | RAG 检索主路径使用代码切块 + 进程内轻量级检索 | 避免 Hosted Agent 区域限制与新增 embedding / vector 资源；Azure AI Search 仅保留 fallback | 2026-05 |
 | DD-003 | Fine-tune 使用 5000 条 AI 生成的 Q&A | 先用 native model 基于用户上传的 5 个 AI Governance PDF 生成结构化问答对，再将其整理为覆盖更全的可治理训练集 | 2026-05 |
 | DD-004 | Fine-tune 数据来源限定为用户上传的 5 个 AI Governance PDF；fine-tune base model 改为 `gpt-4.1-2025-04-14` | `gpt-5.4-nano` 已验证不暴露 fine-tune capability 字段；`gpt-4.1` 在当前 Foundry catalog 和 Portal 中可用于 fine-tune，且已被用户确认为步骤 4 训练基座。自动化创建 job 时必须使用 Foundry account endpoint `aigoverntrustworthyfoundry` 并传入 `trainingType=GlobalStandard` | 2026-05 |
-| DD-005 | VM 使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF）+ ollama | CPU-only，最小资源消耗；MIT 许可；ollama 单命令部署，OpenAI 兼容 API；模型质量足够演示 | 2026-05 |
+| DD-005 | VM 使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF）+ HF CLI 下载 + llama.cpp server + Python sidecar | CPU-only，最小资源消耗；MIT 许可；HF CLI 模拟客户真实下载路径；llama-server 原生 OpenAI-compatible API；sidecar 承接 traceparent 写入 App Insights，全栈约 100 行 Python | 2026-05 |
 | DD-006 | RAG / Tier 1 / Tier 2 Web App 统一走 App Service；RAG 复用现有 `AIGovernDemoASP` | 减少资源数量，避免新建 Service Plan；符合当前用户要求 | 2026-05 |
 | DD-007 | 步骤 2 放弃 Hosted Agent；旧 Foundry Hub / Project 继续仅用于其他 Foundry 场景 | Hosted Agent 受区域限制；RAG Web App 不再依赖新后端 Foundry Project | 2026-05 |
 | DD-008 | App Insights 复用现有 | POC 阶段日志量小，无需隔离；减少资源数量 | 2026-05 |
