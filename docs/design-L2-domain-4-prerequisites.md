@@ -200,8 +200,8 @@ Application Insights 的管理对象分为三类：
 | 2 | 建立 RAG 服务 | ✅ 已完成 | Azure Web App、APIM、AOAI、Blob | Copilot + 用户授权 | Web App 代码（v1.0.4）、PDF 目录、轻量级检索实现、APIM `/rag` |
 | 3 | Foundry 原生模型部署 | ✅ 已完成 | Azure OpenAI、APIM | Copilot + 用户授权 | 模型 deployment、APIM `/native-model`、target registry、验证命令 |
 | 4 | Foundry fine-tune 模型 | ✅ 已完成 | Azure AI Foundry | Copilot + 用户授权 | fine-tune job、deployment、APIM `/finetune-model`、5000 Q&A 归档、target registry |
-| 5 | VM Hugging Face 模型 + API | ⬜ 待开始 | Azure VM | Copilot + 用户 SSH | 安装脚本、API 服务代码 |
-| 6 | VM 模型接入 shared-observability（步骤 5 扩展） | ⬜ 待开始 | VM API、Blob、App Insights | Copilot + 用户授权 | observability 接入代码、验证脚本 |
+| 5 | VM Hugging Face 模型 + API | 🟡 进行中 | Azure VM、App Insights | Copilot + deploy SPN | 安装脚本、API 服务代码、遥测配置 |
+| 6 | VM 调用链观测接入（调用方 shared-observability + VM 侧 App Insights） | ⬜ 待开始 | 调用方脚本 / App、APIM、Blob、App Insights | Copilot + 用户授权 | 调用方 observability 接入代码、字段映射、验证脚本 |
 | 7 | Foundry 自定义 Agent | ⬜ 待开始 | Azure AI Foundry | Copilot + 用户 Portal | Agent 清单、调用脚本 |
 | 8 | Copilot Studio Agent | ⬜ 待开始 | Copilot Studio、Direct Line | 用户 UI + Copilot 验证 | UI 操作指南、验证脚本 |
 | 9 | Tier 1 Consumer App | ⬜ 待开始 | App Service、APIM、全部 AI 后端 | Copilot + 用户授权 | API 代码、connector、部署脚本 |
@@ -291,31 +291,32 @@ Application Insights 的管理对象分为三类：
 
 ### 步骤 5：VM Hugging Face 模型 + API
 
-1. 确认 VM 操作系统、GPU / CPU、磁盘、网络、安全组、Python 版本。
+1. 确认 VM 操作系统、最低成本可用的 CPU 规格、磁盘、网络、安全组、Python 版本。
 2. 选择小型可运行的 Hugging Face 文本模型，优先选择资源消耗低、许可清晰的模型。
-3. 编写 VM 初始化脚本：安装 Python、venv、transformers / vLLM / llama.cpp 等依赖。
+3. 编写 VM 初始化脚本：安装最小运行时依赖，优先采用能直接提供 OpenAI-compatible API 的方案。
 4. 下载模型到 VM 本地目录或挂载磁盘。
-5. 开发 OpenAI-compatible 推理 API。
-6. 配置 systemd / supervisor 启动服务。
-7. 验证 API 在内网可访问。
+5. 提供 OpenAI-compatible 推理 API，尽可能贴近通用 LLM API 格式。
+6. 在 VM 模型服务自身集成 App Insights / OpenTelemetry，承接 `traceparent` 并记录统一字段。
+7. 配置 systemd / supervisor 启动服务。
+8. 验证 API 在内网可访问，并确认 App Insights 中可查询到 trace 记录。
 
 - **Copilot 可执行**：VM 检查脚本、安装脚本、API 服务代码、启动服务配置。
 - **可能需要用户操作**：如果需要 SSH 登录、开端口、分配 GPU、调整 NSG，需要用户协助或授权登录 session。
-- **产物**：VM 部署设计、安装脚本、API 代码、服务配置、验证命令。
+- **产物**：VM 部署设计、安装脚本、API 代码、服务配置、App Insights 遥测设计、验证命令。
 
-### 步骤 6：VM 模型接入 shared-observability（步骤 5 扩展）
+### 步骤 6：VM 调用链观测接入（调用方 shared-observability + VM 侧 App Insights）
 
-1. 确认 VM API 内网地址、shared-observability 依赖包和 Blob / App Insights 连接参数。
+1. 确认 VM API 内网地址、APIM 后端地址，以及 Blob / App Insights 连接参数。
 2. 在可代理场景下将 VM API 放到 APIM 后面。
-3. 在 VM API 中为 `/v1/chat/completions`、`/metadata` 接入 shared-observability。
-4. 记录 `trace_id`、`response_id`、`model_name`、`model_version`、`deployment_type=vm_huggingface`。
-5. 写入完整 input / output / metadata 到 Blob archive。
-6. 将 evidence 事件写入 Application Insights / Log Analytics。
-7. 验证直接调用 VM 模型成功，并确认 Blob 与 App Insights 双写成功。
+3. 保持 VM 模型服务自身只负责 App Insights 轻量遥测和 trace 承接，不在服务内嵌入 shared-observability。
+4. 在未来调用方（Tier 1 / Evaluation / PyRIT / connector 脚本）中接入 shared-observability，记录对 VM 模型的一次实际调用。
+5. 由调用方 evidence 保留 `trace_id`、`response_id`、`model_name`、`model_version`、`deployment_type=vm_huggingface`。
+6. 完整 `input` / `output` / `metadata` 由调用方写入 Blob archive。
+7. 验证：VM 侧 App Insights trace 可查询，调用方 Blob 与 App Insights evidence 双写成功，并可通过 `trace_id` 关联。
 
-- **Copilot 可执行**：observability helper 接入、验证脚本、KQL 查询、Blob 校验脚本。
+- **Copilot 可执行**：调用方 observability helper 接入、VM 侧遥测字段对齐、验证脚本、KQL 查询、Blob 校验脚本。
 - **可能需要用户操作**：如果 VM 网络或权限不足，需要用户协助或授权。
-- **产物**：VM API observability 接入代码、字段映射、验证脚本。
+- **产物**：调用方 observability 接入代码、VM 侧字段映射、验证脚本。
 
 ### 步骤 7：Foundry 自定义 Agent
 

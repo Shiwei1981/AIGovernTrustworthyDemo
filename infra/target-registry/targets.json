@@ -76,7 +76,7 @@
       "target_type": "vm_huggingface_model",
       "display_name": "VM Hugging Face Model (Phi-3-mini-4k-instruct)",
       "model_name": "Phi-3-mini-4k-instruct",
-      "model_version": "<to-be-confirmed>",
+      "model_version": "ggerganov/llama.cpp:b9159 + microsoft/Phi-3-mini-4k-instruct-q4.gguf",
       "vm_name": "AIGovernTrustworthyDemoPhi3VM",
       "vm_os": "Ubuntu 22.04.5 LTS (jammy)",
       "vm_size": "Standard_B4s_v2",
@@ -87,8 +87,8 @@
       "endpoint": "http://10.1.1.8:11434",
       "apim_path": "<to-be-configured>",
       "auth": "none",
-      "status": "provisioned",
-      "notes": "Step 5. VM provisioned manually. OS: Ubuntu 22.04.5 LTS (jammy). Size: Standard B4s v2 (4 vcpu, 16 GiB). Private IP: 10.1.1.8. OS disk: 30 GB (design asked 64 GB — sufficient for model+runtime at ~3-4 GB; no resize needed). Public DNS assigned — NSG must restrict port 11434 to VNet/controlled sources only. llama.cpp server + Python sidecar not yet installed."
+      "status": "ready",
+      "notes": "Step 5. VM provisioned manually. OS: Ubuntu 22.04.5 LTS (jammy). Size: Standard B4s v2 (4 vcpu, 16 GiB). Private IP: 10.1.1.8. OS disk: 30 GB (design asked 64 GB — sufficient for model+runtime at ~3-4 GB; no resize needed). Public DNS assigned, while NSG only allows VirtualNetwork traffic to 11434/TCP. llama.cpp server + Python sidecar deployed. /health and /v1/chat/completions smoke tests passed. App Insights trace emission verified from VM sidecar logs."
     },
     {
       "target_id": "AIGovernTrustworthyDemoTier1App",

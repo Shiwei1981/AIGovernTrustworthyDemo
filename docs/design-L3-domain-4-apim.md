@@ -444,7 +444,7 @@ serviceUrl:   https://directline.botframework.com/v3/directline
 
 ### 7.6 `vm-model` — VM Hugging Face 模型（Phi-3-mini-4k-instruct via llama.cpp server）⬜
 
-**状态**：待配置（VM 已创建；需在 `10.1.1.8:11434` 启动 sidecar 服务后再绑定 APIM backend）
+**状态**：待配置（VM sidecar 已在 `10.1.1.8:11434` 运行；下一步只需绑定 APIM backend / policy）
 
 **前端**：
 ```

@@ -33,4 +33,4 @@ vm-model/
 
 ## 当前状态
 
-🟡 进行中 — VM 已创建（`10.1.1.8` / `aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`），脚本与 sidecar 待开发。
+✅ 已完成最小可运行切片 — VM 已创建（`10.1.1.8` / `aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`），`llama-server` + sidecar 已部署，`/health` 与 `/v1/chat/completions` smoke test 已通过。

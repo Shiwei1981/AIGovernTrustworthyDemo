@@ -6,7 +6,7 @@
 
 步骤 5 在本项目中的定位，不是为了单独搭一台“能跑模型的 VM”，而是建立一个能够被 Domain 4 持续纳管的 **VM-hosted Hugging Face text model target**，为后续 APIM 接入、VM 侧 App Insights 观测、调用方 shared-observability、evaluation、red teaming 和 dashboard 指标提供基础对象。
 
-> **当前状态（2026-05-15）**：VM `AIGovernTrustworthyDemoPhi3VM` 已手动创建（Canada East，Standard B4s v2，Ubuntu 22.04.5 LTS jammy，Private IP `10.1.1.8`）；deploy SPN 已验证可通过 `az vm run-command` 登录和执行命令；运行时安装（llama.cpp server + Python sidecar）与模型下载尚未开始。低级别设计、APIM 预留路径、target registry、`.env.local.L4` 变量合同均已完成。
+> **当前状态（2026-05-15）**：VM `AIGovernTrustworthyDemoPhi3VM` 已手动创建（Canada East，Standard B4s v2，Ubuntu 22.04.5 LTS jammy，Private IP `10.1.1.8`）；deploy SPN 已验证可通过 `az vm run-command` 登录和执行命令；`llama.cpp server`、Python sidecar、HF 模型下载与 systemd 服务均已部署完成；`/health` 与 `/v1/chat/completions` smoke test 已通过，App Insights 导出已在 sidecar 日志中验证成功。APIM backend 绑定仍待后续步骤完成。
 
 **关联文档**：
 
