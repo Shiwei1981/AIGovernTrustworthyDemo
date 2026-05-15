@@ -373,7 +373,7 @@ az storage container create --account-name aigoverntrustworthysa --name aigovern
 1. 本轮 draft 训练集不混入故意错误样本。若后续需要行为对照或红队样本，应保留独立的 eval / red teaming 数据集，而不是直接并入 fine-tune 训练文件。
 2. 2026-05-14 对 `aigoverntrustworthyfoundry` / `AIGovernTrustworthyAOAI` 执行 `az cognitiveservices account list-models` 的结果显示：`gpt-5.4-nano` 没有 `capabilities.FineTuneTokensMaxValue` 且 `finetuneCapabilities = null`；同一 catalog 中 `gpt-4.1`、`gpt-4.1-nano`、`gpt-4.1-mini`、`gpt-4o-mini`、`gpt-5.4-mini` 均暴露 fine-tune 能力字段。当前步骤 4 选用 `gpt-4.1`，这是用户确认后的 base model 选择。
 3. 当前步骤 4 要求所有具体操作由 AI 自动化完成；除已批准的 fine-tune container、fine-tune job、fine-tuned deployment 外，不得创建或删除其他云资源。因此 Storage 账户仍固定复用 `.env.local.L4` 所指向的既有 `aigoverntrustworthysa`。
-4. 如脚本运行时需要 `OTEL_SERVICE_NAME`，应以进程级环境变量注入，不新增新的 `.env.local.L4` 键名。
+4. 各应用的 `OTEL_SERVICE_NAME` 应统一收敛到 `.env.local.L4` 的专用键名中；步骤 5 的 VM 模型服务新增 `L4_OTEL_SERVICE_NAME_VM_MODEL`，运行时由 sidecar 进程映射到 `OTEL_SERVICE_NAME`。
 5. 2026-05-15 实际运行结果：`aigoverntrustworthydemo-finetune` container 已创建，5000 行训练 JSONL 已生成并上传；fine-tune job `ftjob-ae456ec3dc4d468b87ecb8512ad33f86` 已通过 `aigoverntrustworthyfoundry` account endpoint 创建并成功完成。早先 `invalidPayload: The specified base model does not support fine-tuning.` 已确认是自动化调用缺少 `trainingType=GlobalStandard` 且 endpoint 选择不一致导致；当前平台已返回 fine-tuned model `gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo`，deployment `AIGovernTrustworthyDemoFineTuneModel` 与 APIM `/finetune-model` 均已配置完成。
 
 ---
@@ -518,7 +518,7 @@ az storage container create \
 | OS | Ubuntu 22.04.5 LTS (jammy) |
 | VM Size | Standard B4s v2（4 vcpu，16 GiB）— 成本优先原则，已确认可运行 |
 | Public IP | ✅ 已配置（DNS：`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`）；**NSG 必须限制 11434 端口仅允许受控来源入站** |
-| Network Security Group | 仅允许受控 VNet / 内网来源对 11434 端口的入站 |
+| Network Security Group | 实际使用 `AIGovernCanadaEastVNET-default-nsg-canadaeast`（RG=`aigoverndemorg`）；已添加显式规则 `Allow-VNet-TCP-11434-VMModel`，仅允许 VirtualNetwork 入站访问 `11434/TCP` |
 | OS Disk | 30 GB（实际配置；设计要求 64 GB，实际模型 ~2.2 GB + 运行时 ~1 GB，空间足够）|
 
 **选定模型**：[`microsoft/Phi-3-mini-4k-instruct`](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct)（GGUF Q4_K_M 量化）
@@ -639,6 +639,7 @@ L4_PYRIT_RUNNER_CLIENT_SECRET=<to-be-created>
 L4_OTEL_SERVICE_NAME_RAG_SERVICE=AIGovernTrustworthyDemo.RAGService
 L4_OTEL_SERVICE_NAME_TIER1_APP=AIGovernTrustworthyDemo.Tier1App
 L4_OTEL_SERVICE_NAME_TIER2_APP=AIGovernTrustworthyDemo.Tier2App
+L4_OTEL_SERVICE_NAME_VM_MODEL=AIGovernTrustworthyDemo.VMModel
 L4_OTEL_SERVICE_NAME_EVALUATION_RUNNER=AIGovernTrustworthyDemo.EvaluationRunner
 L4_OTEL_SERVICE_NAME_PYRIT_RUNNER=AIGovernTrustworthyDemo.PyRITRunner
 

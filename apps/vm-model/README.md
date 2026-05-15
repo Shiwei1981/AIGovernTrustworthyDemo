@@ -28,6 +28,7 @@ vm-model/
 | `L4_VM_PUBLIC_DNS` | VM 公网 DNS（仅用于 SSH 管理）|
 | `L4_VM_MODEL_NAME` | 模型名称（llama-server alias）|
 | `L4_VM_MODEL_API_PORT` | 推理 API 端口（默认 11434）|
+| `L4_OTEL_SERVICE_NAME_VM_MODEL` | VM 模型 sidecar 的 OTel `service.name` |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | App Insights 连接串 |
 
 ## 当前状态

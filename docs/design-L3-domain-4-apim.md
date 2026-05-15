@@ -481,7 +481,7 @@ serviceUrl:   http://10.1.1.8:11434
 
 **网络前置条件**：
 - VM 所在子网与 APIM subnet-APIM 在同一 VNet，或 VNet 内可路由
-- NSG 允许 APIM subnet → VM subnet: 11434/TCP
+- NSG `AIGovernCanadaEastVNET-default-nsg-canadaeast` 已存在显式规则 `Allow-VNet-TCP-11434-VMModel`
 - `L4_VM_PRIVATE_IP` 已确认：`10.1.1.8`
 
 ---

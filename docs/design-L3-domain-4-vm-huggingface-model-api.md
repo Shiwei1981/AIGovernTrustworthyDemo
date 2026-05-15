@@ -117,6 +117,7 @@
    - `L4_VM_PUBLIC_DNS`
    - `L4_VM_MODEL_NAME`
    - `L4_VM_MODEL_API_PORT`
+   - `L4_OTEL_SERVICE_NAME_VM_MODEL`
 
 ### 5.3 模型选择与运行时需求
 
@@ -153,7 +154,7 @@
 ### 5.5 网络与安全边界需求
 
 1. VM 已配置 Public IP / DNS（`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`）。**推理端口 `11434/TCP` 不得对公网开放**；NSG 必须只允许受控 VNet / 内网来源入站。
-2. Network Security Group 必须只允许受控 VNet / 内网来源访问 `11434/TCP`。
+2. 当前实际生效的 NSG 为 `AIGovernCanadaEastVNET-default-nsg-canadaeast`（RG=`aigoverndemorg`），并已添加显式规则 `Allow-VNet-TCP-11434-VMModel`，只允许 `VirtualNetwork -> TCP/11434`。
 3. APIM 子网到 VM 子网之间必须具备可路由性，以便后续 `/vm-model` 可以代理到 VM 后端。
 4. 步骤 5 的最小验证可先使用内网直连 `http://<L4_VM_PRIVATE_IP>:11434`；但长期治理入口必须预留给 APIM `/vm-model`。
 5. 直接访问 VM API 时不依赖 Entra / API Key；其安全边界依赖"NSG + 受控内网来源"约束。Public IP 仅用于 SSH 管理，绝不用于暴露推理端口。
@@ -162,7 +163,7 @@
 ### 5.6 VM 侧 App Insights 与 trace 记录需求
 
 1. **VM 模型服务自身不集成 `shared-observability`**；`shared-observability` 由未来调用方在调用 VM 模型时接入。
-2. VM 模型服务应尽可能集成 **Application Insights / OpenTelemetry**，并复用仓库现有的 `APPLICATIONINSIGHTS_CONNECTION_STRING`。
+2. VM 模型服务应尽可能集成 **Application Insights / OpenTelemetry**，并复用仓库现有的 `APPLICATIONINSIGHTS_CONNECTION_STRING` 与 `L4_OTEL_SERVICE_NAME_VM_MODEL`。
 3. VM 模型服务必须优先承接上游传入的 W3C trace context，例如 `traceparent`；若无上游 trace，允许服务自行开启新的 trace。
 4. VM 模型服务应在 App Insights 中记录轻量级遥测，并尽量复用现有字段语义，至少覆盖：
    - `target_type`
@@ -189,6 +190,7 @@
 | `model_name` | `Phi-3-mini-4k-instruct` |
 | `model_version` | 待在实际模型拉取完成后确认，不得长期保留 placeholder |
 | `api_port` | `11434` |
+| `service_name` | `AIGovernTrustworthyDemo.VMModel` |
 | `auth` | `none`（VM 直连路径） |
 | `apim_path` | 后续固定为 `/vm-model` |
 
@@ -288,6 +290,7 @@
 | llama-server 内部端口 | `11435`（仅 VM 内访问）|
 | 上游 trace 承接 | 读取 W3C `traceparent` header；无则自启新 trace |
 | App Insights 事件名 | `AIGovernTrustworthyVMModelTrace` |
+| `OTEL_SERVICE_NAME` | 来自 `.env.local.L4`：`L4_OTEL_SERVICE_NAME_VM_MODEL=AIGovernTrustworthyDemo.VMModel` |
 | 记录字段 | `target_type`, `target_id`, `model_name`, `model_version`, `trace_id`, `span_id`, `response_id`, `status`, `latency_ms` |
 | 对调用方透明 | 响应体和 status code 均原样转发，sidecar 不修改 |
 | 实现复杂度 | ~100 行 Python，不引入复杂框架依赖 |
