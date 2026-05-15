@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Domain 4 AI Governance Trustworthy Demo \u2014 target registry. Lists every governed AI target with its identity, endpoint, and type for use by evaluation runners, red teaming, and the dashboard metric collector.",
+  "description": "Domain 4 AI Governance Trustworthy Demo — target registry. Lists every governed AI target with its identity, endpoint, and type for use by evaluation runners, red teaming, and the dashboard metric collector.",
   "targets": [
     {
       "target_id": "AIGovernTrustworthyDemoNativeModel",
@@ -12,7 +12,7 @@
       "deployment_name": "AIGovernTrustworthyDemoNativeModel",
       "endpoint": "https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel/chat/completions?api-version=2025-01-01-preview",
       "apim_path": "/native-model",
-      "apim_note": "VNet Internal \u2014 APIM native-model API configured at /native-model. APIM MSI has Cognitive Services OpenAI User on AIGovernTrustworthyAOAI.",
+      "apim_note": "VNet Internal — APIM native-model API configured at /native-model. APIM MSI has Cognitive Services OpenAI User on AIGovernTrustworthyAOAI.",
       "auth": "entra",
       "status": "active",
       "notes": "Step 3. Direct AOAI endpoint verified 2026-05-13. APIM /native-model configured to proxy POST /chat/completions with MSI auth, W3C trace context, and App Insights diagnostics."
@@ -45,7 +45,7 @@
       "auth": "entra",
       "status": "active",
       "notes": "Step 4. Fine-tune deployment ready and APIM /finetune-model configured to proxy POST /chat/completions with MSI auth, W3C trace context, and App Insights diagnostics.",
-      "apim_note": "VNet Internal \u2014 APIM finetune-model API configured at /finetune-model. APIM MSI has Cognitive Services OpenAI User on aigoverntrustworthyfoundry."
+      "apim_note": "VNet Internal — APIM finetune-model API configured at /finetune-model. APIM MSI has Cognitive Services OpenAI User on aigoverntrustworthyfoundry."
     },
     {
       "target_id": "AIGovernTrustworthyDemoFoundryAgent",
@@ -78,17 +78,17 @@
       "model_name": "Phi-3-mini-4k-instruct",
       "model_version": "<to-be-confirmed>",
       "vm_name": "AIGovernTrustworthyDemoPhi3VM",
-      "vm_os": "Ubuntu Server 26.04 LTS Gen2",
+      "vm_os": "Ubuntu 22.04.5 LTS (jammy)",
       "vm_size": "Standard_B4s_v2",
       "vm_region": "canadaeast",
-      "vm_private_ip": "<to-be-filled>",
+      "vm_private_ip": "10.1.1.8",
       "vm_public_dns": "aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com",
       "api_port": 11434,
-      "endpoint": "http://<to-be-filled>:11434",
+      "endpoint": "http://10.1.1.8:11434",
       "apim_path": "<to-be-configured>",
       "auth": "none",
       "status": "provisioned",
-      "notes": "Step 5. VM provisioned manually. OS: Ubuntu 26.04 LTS Gen2. Size: Standard B4s v2 (4 vcpu, 16 GiB). Public DNS assigned — NSG must restrict port 11434 to VNet/controlled sources only. Private IP to be filled after confirmed. llama.cpp server + Python sidecar not yet installed."
+      "notes": "Step 5. VM provisioned manually. OS: Ubuntu 22.04.5 LTS (jammy). Size: Standard B4s v2 (4 vcpu, 16 GiB). Private IP: 10.1.1.8. OS disk: 30 GB (design asked 64 GB — sufficient for model+runtime at ~3-4 GB; no resize needed). Public DNS assigned — NSG must restrict port 11434 to VNet/controlled sources only. llama.cpp server + Python sidecar not yet installed."
     },
     {
       "target_id": "AIGovernTrustworthyDemoTier1App",

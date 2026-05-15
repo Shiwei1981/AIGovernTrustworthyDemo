@@ -70,7 +70,7 @@
 | 项目 | 当前 draft → 实际值 |
 |---|---|
 | VM 名称 | `AIGovernTrustworthyDemoPhi3VM` ✅ 已创建 |
-| OS | Ubuntu Server 26.04 LTS - Gen2 ✅ 已创建 |
+| OS | Ubuntu 22.04.5 LTS (jammy) ✅ 已创建 |
 | VM 规格 | Standard B4s v2（4 vcpu，16 GiB）✅ 已创建 |
 | 网络 | Public IP 已配置，DNS：`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`；**NSG 必须限制 11434 端口** |
 | 推理端口 | `11434`（sidecar 外部）/ `11435`（llama-server 内部）|
@@ -98,13 +98,14 @@
 
 > **✅ 实际创建状态（2026-05-15）**
 > - 资源名：`AIGovernTrustworthyDemoPhi3VM`
-> - OS：Ubuntu Server 26.04 LTS - Gen2
+> - OS：Ubuntu 22.04.5 LTS (jammy)（Portal 显示 "Ubuntu Server 24.04"，实际 `lsb_release` 返回 22.04）
 > - VM 规格：Standard B4s v2（4 vcpu，16 GiB）
+> - Private IP：`10.1.1.8`
 > - Public DNS：`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`
-> - Private IP：待填入 `L4_VM_PRIVATE_IP`
+> - OS Disk：30 GB（设计要求 64 GB；实际模型 ~2.2 GB + 运行时 ~1 GB，30 GB 足够，无需扩容）
 
 1. 步骤 5 使用 **Azure VM** 作为运行载体，实际资源名为 `AIGovernTrustworthyDemoPhi3VM`。
-2. VM 操作系统为 **Ubuntu Server 26.04 LTS - Gen2**。
+2. VM 操作系统为 **Ubuntu 22.04.5 LTS (jammy)**。
 3. VM 规格为 **Standard B4s v2**（4 vcpu，16 GiB），符合"成本优先 + 可稳定运行 `Phi-3-mini-4k-instruct`"原则。
 4. OS Disk 规格至少满足当前设计中的 **64GB**，用于容纳运行时、模型文件和日志。
 5. VM 已配置 **Public IP / DNS**。**NSG 必须严格限制 `11434/TCP` 入站仅允许受控来源**，不得向公网开放推理端口。

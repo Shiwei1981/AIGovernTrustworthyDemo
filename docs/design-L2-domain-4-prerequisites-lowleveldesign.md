@@ -515,11 +515,11 @@ az storage container create \
 | 属性 | 值 |
 |---|---|
 | 资源名 | `AIGovernTrustworthyDemoPhi3VM` |
-| OS | Ubuntu Server 26.04 LTS - Gen2 |
+| OS | Ubuntu 22.04.5 LTS (jammy) |
 | VM Size | Standard B4s v2（4 vcpu，16 GiB）— 成本优先原则，已确认可运行 |
 | Public IP | ✅ 已配置（DNS：`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`）；**NSG 必须限制 11434 端口仅允许受控来源入站** |
 | Network Security Group | 仅允许受控 VNet / 内网来源对 11434 端口的入站 |
-| OS Disk | 64GB（足够放 llama.cpp server + 模型）|
+| OS Disk | 30 GB（实际配置；设计要求 64 GB，实际模型 ~2.2 GB + 运行时 ~1 GB，空间足够）|
 
 **选定模型**：[`microsoft/Phi-3-mini-4k-instruct`](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct)（GGUF Q4_K_M 量化）
 
@@ -567,14 +567,14 @@ curl http://localhost:11434/v1/chat/completions \
 
 **VM 创建命令**：
 
-> ✅ **已手动创建**：`AIGovernTrustworthyDemoPhi3VM`（Canada East，Standard B4s v2，Ubuntu 26.04 LTS Gen2）。
+> ✅ **已手动创建**：`AIGovernTrustworthyDemoPhi3VM`（Canada East，Standard B4s v2，Ubuntu 22.04.5 LTS (jammy)）。
 > 以下命令仅供参考 / 重建使用。
 
 ```bash
 az vm create \
   --name AIGovernTrustworthyDemoPhi3VM \
   --resource-group AIGovernTrustworthyRG \
-  --image Ubuntu2404 \
+  --image Ubuntu2204 \
   --size Standard_B4s_v2 \
   --admin-username azureuser \
   --generate-ssh-keys \
@@ -703,7 +703,7 @@ L4_TIER2_APP_URL=<to-be-deployed>               # https://AIGovernTrustworthyDem
 
 # ── VM（Hugging Face 模型）────────────────────────────────────────────────
 L4_VM_NAME=AIGovernTrustworthyDemoPhi3VM
-L4_VM_PRIVATE_IP=<to-be-filled>
+L4_VM_PRIVATE_IP=10.1.1.8
 L4_VM_PUBLIC_DNS=aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com
 L4_VM_MODEL_API_PORT=11434
 
