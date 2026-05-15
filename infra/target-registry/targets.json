@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Domain 4 AI Governance Trustworthy Demo — target registry. Lists every governed AI target with its identity, endpoint, and type for use by evaluation runners, red teaming, and the dashboard metric collector.",
+  "description": "Domain 4 AI Governance Trustworthy Demo \u2014 target registry. Lists every governed AI target with its identity, endpoint, and type for use by evaluation runners, red teaming, and the dashboard metric collector.",
   "targets": [
     {
       "target_id": "AIGovernTrustworthyDemoNativeModel",
@@ -12,10 +12,10 @@
       "deployment_name": "AIGovernTrustworthyDemoNativeModel",
       "endpoint": "https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel/chat/completions?api-version=2025-01-01-preview",
       "apim_path": "/native-model",
-      "apim_note": "VNet Internal — APIM native-model API pending configuration (APIM MSI needs Cognitive Services OpenAI User on AIGovernTrustworthyAOAI).",
+      "apim_note": "VNet Internal \u2014 APIM native-model API configured at /native-model. APIM MSI has Cognitive Services OpenAI User on AIGovernTrustworthyAOAI.",
       "auth": "entra",
       "status": "active",
-      "notes": "Step 3. Direct AOAI endpoint verified 2026-05-13. APIM proxy path /native-model pending (APIM MSI RBAC needed)."
+      "notes": "Step 3. Direct AOAI endpoint verified 2026-05-13. APIM /native-model configured to proxy POST /chat/completions with MSI auth, W3C trace context, and App Insights diagnostics."
     },
     {
       "target_id": "AIGovernTrustworthyDemoRAGService",
@@ -36,15 +36,16 @@
     {
       "target_id": "AIGovernTrustworthyDemoFineTuneModel",
       "target_type": "foundry_finetune_model",
-      "display_name": "Foundry Fine-tune Model (gpt-4o-mini)",
-      "model_name": "gpt-4o-mini",
-      "model_version": "<to-be-created>",
+      "display_name": "Foundry Fine-tune Model (gpt-4.1)",
+      "model_name": "gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo",
+      "model_version": "1",
       "deployment_name": "AIGovernTrustworthyDemoFineTuneModel",
-      "endpoint": "<to-be-created>",
-      "apim_path": "<to-be-configured>",
+      "endpoint": "https://aigoverntrustworthyfoundry.cognitiveservices.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel/chat/completions?api-version=2025-01-01-preview",
+      "apim_path": "/finetune-model",
       "auth": "entra",
-      "status": "pending",
-      "notes": "Step 4. Fine-tune job not yet created."
+      "status": "active",
+      "notes": "Step 4. Fine-tune deployment ready and APIM /finetune-model configured to proxy POST /chat/completions with MSI auth, W3C trace context, and App Insights diagnostics.",
+      "apim_note": "VNet Internal \u2014 APIM finetune-model API configured at /finetune-model. APIM MSI has Cognitive Services OpenAI User on aigoverntrustworthyfoundry."
     },
     {
       "target_id": "AIGovernTrustworthyDemoFoundryAgent",

@@ -5,6 +5,7 @@ tools: [read, search, execute, todo]
 argument-hint: "What change or code path should be reviewed?"
 user-invocable: true
 disable-model-invocation: false
+model: gpt-5.4
 ---
 You are the Superpowers Review agent for this repository. Review a targeted change for real regressions and risks with concise, high-signal findings.
 

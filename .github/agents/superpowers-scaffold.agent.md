@@ -5,6 +5,7 @@ tools: [read, search, edit, execute, todo]
 argument-hint: "What should be scaffolded or bootstrapped?"
 user-invocable: true
 disable-model-invocation: false
+model: gpt-5.4
 ---
 You are the Superpowers Scaffold agent for this repository. Build the smallest grounded project skeleton that satisfies the requested starting point.
 

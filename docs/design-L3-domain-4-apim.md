@@ -66,8 +66,8 @@ APIM 部署在 **Internal VNet 模式**，Gateway URL 只在 VNet 内部可达�
 | Management（ARM 配置） | `https://aigoverntrustworthydemoapim.management.azure-api.net` | 互联网（APIM 内部管理面）|
 | Developer Portal | `https://aigoverntrustworthydemoapim.developer.azure-api.net` | VNet 内部 |
 
-> **External 测试方案**：当前阶段测试脚本通过 ARM Management API 验证 APIM 配置（不需要网络可达），  
-> 并直连后端 API 做功能烟测。如需真实流量走 APIM，须从 VNet 内 VM 运行，或在 APIM 前加 Application Gateway。
+> **当前测试状态（2026-05-14）**：当前开发 / 测试 Linux 服务器已与 APIM 所在 VNet 具备联通条件，且 DNS 可将 `aigoverntrustworthydemoapim.azure-api.net` 解析到私网 `10.1.2.4`，因此已完成真实流量经 APIM Gateway 的调用验证。
+> ARM Management API 仍可从公网访问，用于配置核查与脚本执行。
 
 ---
 
@@ -115,7 +115,7 @@ APIM Product 用于将多个 API 组合打包，并控制访问策略（subscrip
 | API 名 | APIM 路径 | 后端目标类型 | 认证 scope | 实现状态 |
 |---|---|---|---|---|
 | `rag-service` | `/rag` | RAG Web App | N/A | ✅ 已配置（Web App backend + `traceparent` 注入策略）|
-| `native-model` | `/native-model` | AOAI gpt-5.4-nano | `https://cognitiveservices.azure.com` | ⬜ 待配置 |
+| `native-model` | `/native-model` | AOAI gpt-5.4-nano | `https://cognitiveservices.azure.com` | ✅ 已配置（MSI + `traceparent` + API diagnostics） |
 | `finetune-model` | `/finetune-model` | AOAI fine-tune deployment | `https://cognitiveservices.azure.com` | ⬜ 待配置（后端未就绪）|
 | `foundry-agent` | `/foundry-agent` | Foundry 自定义 Agent | `https://ml.azure.com` | ⬜ 待配置（Agent 未创建）|
 | `copilot-studio` | `/copilot-studio` | Direct Line（Copilot Studio） | DirectLine secret | ⬜ 待配置（Agent 未创建）|
@@ -141,12 +141,15 @@ apiType:            http
 
 ### 6.1 后端汇总
 
-每个 API 对应一个 APIM Backend entity，负责记录实际目标地址。
+每个 API 在当前实现中可通过两种方式记录实际目标地址：
+
+1. 单独的 APIM Backend entity
+2. 直接在 API `serviceUrl` 与 `set-backend-service` policy 中内联定义
 
 | Backend 名 | serviceUrl | 认证方式 | 状态 |
 |---|---|---|---|
 | `rag-webapp` | `https://AIGovernTrustworthyRAGApp.azurewebsites.net` | 无（APIM -> Web App 直接 HTTPS） | ✅ 已配置（`set-backend-service` 内联策略）|
-| `aoai-native-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建 |
+| `aoai-native-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel` | MSI，scope=`https://cognitiveservices.azure.com` | ✅ 已通过 API `serviceUrl` + `set-backend-service` 配置 |
 | `aoai-finetune-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建（deployment 未就绪）|
 | `foundry-custom-agent` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject` | MSI，scope=`https://ml.azure.com` | ⬜ 待创建（Agent 未创建）|
 | `copilot-studio-directline` | `https://directline.botframework.com/v3/directline` | Named Value `copilot-directline-secret`（Header `Authorization: Bearer {secret}`）| ⬜ 待创建（Agent 未创建）|
@@ -163,12 +166,12 @@ APIM 对需要 Azure 身份的后端使用 System-Assigned MSI 自动获取 toke
 
 | 后端资源类型 | Token Scope | MSI 所需 RBAC |
 |---|---|---|
-| Azure OpenAI（AOAI chat completions） | `https://cognitiveservices.azure.com` | `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI` ⬜ |
+| Azure OpenAI（AOAI chat completions） | `https://cognitiveservices.azure.com` | `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI` ✅ |
 | App Service（Tier1/Tier2） | 透传客户端 token（不由 MSI 注入）| — |
 | Copilot Studio Direct Line | DirectLine secret（Named Value）| — |
 | VM ollama | 无 auth | — |
 
-**AOAI MSI RBAC 待创建**（等 native-model API 配置时同步添加）：
+**AOAI MSI RBAC（已执行）**：
 ```bash
 az role assignment create \
   --assignee 32195307-0138-49c1-b36f-381928efcd5d \
@@ -242,9 +245,9 @@ Content-Type: application/json
 
 ---
 
-### 7.2 `native-model` — AOAI gpt-5.4-nano 原生模型 ⬜
+### 7.2 `native-model` — AOAI gpt-5.4-nano 原生模型 ✅
 
-**状态**：待配置
+**状态**：已配置（2026-05-14）
 
 **前端**：
 ```
@@ -264,6 +267,9 @@ serviceUrl:   https://aigoverntrustworthyaoai.openai.azure.com/openai/deployment
 <policies>
   <inbound>
     <base />
+    <set-header name="traceparent" exists-action="skip">
+      <value>@("00-" + context.RequestId.ToString("N") + "-" + context.RequestId.ToString("N").Substring(16, 16) + "-01")</value>
+    </set-header>
     <!-- 注入 APIM MSI token，scope=cognitiveservices.azure.com -->
     <authentication-managed-identity
       resource="https://cognitiveservices.azure.com"
@@ -275,30 +281,51 @@ serviceUrl:   https://aigoverntrustworthyaoai.openai.azure.com/openai/deployment
     <set-query-parameter name="api-version" exists-action="override">
       <value>2025-01-01-preview</value>
     </set-query-parameter>
+    <set-backend-service base-url="https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel" />
   </inbound>
-  <backend><base /></backend>
-  <outbound><base /></outbound>
-  <on-error><base /></on-error>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+    <set-header name="x-aigov-apim-request-id" exists-action="override">
+      <value>@(context.RequestId.ToString())</value>
+    </set-header>
+  </outbound>
+  <on-error>
+    <base />
+    <set-status code="502" reason="Bad Gateway" />
+    <set-header name="Content-Type" exists-action="override">
+      <value>application/json</value>
+    </set-header>
+    <set-body>@{
+      return new JObject(
+        new JProperty("error", context.LastError.Message),
+        new JProperty("source", context.LastError.Source),
+        new JProperty("apim_request_id", context.RequestId.ToString())
+      ).ToString();
+    }</set-body>
+  </on-error>
 </policies>
 ```
 
 **前置条件**：
 - `AIGovernTrustworthyAOAI` AOAI 资源上 `disableLocalAuth=true` ✅ 已设置
-- APIM MSI 需要 `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI` ⬜
+- APIM MSI 需要 `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI` ✅ 已完成
 
-**待配置**：
+**已执行**：
 ```bash
-# 参考命令（创建 API + operation）
-az apim api create \
-  --service-name AIGovernTrustworthyDemoAPIM \
-  --resource-group AIGovernTrustworthyRG \
-  --api-id native-model \
-  --display-name "Native Model (gpt-5.4-nano)" \
-  --path native-model \
-  --protocols https \
-  --service-url "https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel" \
-  --subscription-required false
+bash infra/apim/setup-native-model-api.sh
 ```
+
+**验证结果**：
+- 直连 AOAI：`apps/native-model/scripts/test_native_model.py` 返回 200 且 response 非空
+- APIM `/native-model/chat/completions`：2026-05-14 返回 200，model=`gpt-5.4-nano-2026-03-17`
+- API-level diagnostics：`applicationinsights` 已绑定，`httpCorrelationProtocol = W3C`
+- App Insights：出现 APIM → AOAI dependency 记录，`OperationName = native-model;rev=1 - chat-completions`
+- AOAI 平台诊断：`AzureDiagnostics` 中可见 `modelDeploymentName = AIGovernTrustworthyDemoNativeModel`、`modelName = gpt-5.4-nano`、`modelVersion = 2026-03-17`
+
+> **说明**：当前 `APIM -> AOAI REST` 原生模型调用链不单独要求 Foundry Studio Tracing 页面出现专属 span；该路径的平台证据以 APIM dependency + AOAI 平台诊断为准。
 
 ---
 
@@ -308,7 +335,7 @@ az apim api create \
 
 **前端**：
 ```
-displayName:  Fine-tune Model (gpt-4o-mini)
+ displayName:  Fine-tune Model (gpt-4.1)
 path:         /finetune-model
 serviceUrl:   https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel
 ```
@@ -317,10 +344,25 @@ serviceUrl:   https://aigoverntrustworthyaoai.openai.azure.com/openai/deployment
 
 **Inbound Policy**：与 `native-model` 相同（`cognitiveservices.azure.com` scope）
 
+**API-level diagnostics**：与 `native-model` 相同（`applicationinsights`、100% sampling、W3C、verbosity=`information`）
+
+**自动化实施要求**：
+
+1. APIM `/finetune-model` 的落地方式应与步骤 3 的 `/native-model` 保持一致，优先复用相同脚本模式。
+2. 推荐新增 `infra/apim/setup-finetune-model-api.sh`，其结构应与 `setup-native-model-api.sh` 一致，仅替换：
+   - `api-id = finetune-model`
+   - `path = /finetune-model`
+   - `deployment = AIGovernTrustworthyDemoFineTuneModel`
+3. Policy、MSI、`traceparent`、`api-version`、`x-aigov-apim-request-id`、API diagnostics 全部与 `native-model` 保持一致。
+4. 该脚本仅允许修改**既有** APIM service 内的 API / operation / policy / diagnostics，以及校验既有 AOAI 上的访问授权；不得创建或删除 APIM、AOAI、Storage 等云资源。
+5. 若 `AIGovernTrustworthyDemoFineTuneModel` deployment 尚不存在，且其创建被当前策略视为禁止的资源创建，则 APIM 配置阶段必须停止，不得伪造 backend 指向。
+4. Diagnostics 验证口径也与 `native-model` 保持一致：APIM dependency + AOAI 平台诊断。
+
 **前置条件**：
 - Fine-tune 模型训练和部署完成（步骤 4）
 - `AIGovernTrustworthyDemoFineTuneModel` deployment 处于 `Succeeded`
 - `L4_FOUNDRY_FINETUNE_MODEL_ENDPOINT` 填入实际值
+- APIM MSI 已具备对 `AIGovernTrustworthyAOAI` 的 `Cognitive Services OpenAI User`（步骤 3 已满足，可直接复用）
 
 ---
 
@@ -571,7 +613,7 @@ serviceUrl:   https://aigoverntrustworthydemotier2app.azurewebsites.net
 | API | Diagnostics 状态 |
 |---|---|
 | `rag-service` | ✅ 已启用（100% sampling，W3C，information）|
-| `native-model` | ⬜ 待配置 |
+| `native-model` | ✅ 已启用（100% sampling，W3C，information）|
 | `finetune-model` | ⬜ 待配置 |
 | `foundry-agent` | ⬜ 待配置 |
 | `copilot-studio` | ⬜ 待配置 |
@@ -642,8 +684,8 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
  ✅ rag-service API diagnostics 复核（App Insights 三方写入，trace_id 非空）
 
 等 AOAI 相关步骤就绪（步骤 3、4）──────────────────────────────
- ⬜ APIM MSI → Cognitive Services OpenAI User on AIGovernTrustworthyAOAI
- ⬜ native-model API 配置
+ ✅ APIM MSI → Cognitive Services OpenAI User on AIGovernTrustworthyAOAI
+ ✅ native-model API 配置
  ⬜ finetune-model API 配置（步骤 4 完成后）
 
 等 Foundry 步骤就绪（步骤 7）───────────────────────────────────
@@ -670,11 +712,11 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
 |---|---|---|
 | **实例** | APIM 创建、VNet Internal、NSG | ✅ 完成 |
 | **实例** | MSI 启用 + RBAC（旧 Foundry Project）| ✅ 完成 |
-| **实例** | MSI RBAC（AOAI）| ⬜ 待添加 |
+| **实例** | MSI RBAC（AOAI）| ✅ 完成 |
 | **观测** | App Insights logger | ✅ 完成 |
 | **观测** | Gateway-level diagnostics | ✅ 完成 |
 | **API** | `rag-service` Web App backend + policy + diagnostics | ✅ 完成 |
-| **API** | `native-model` | ⬜ 待配置 |
+| **API** | `native-model` | ✅ 完成 |
 | **API** | `finetune-model` | ⬜ 待配置（后端未就绪）|
 | **API** | `foundry-agent` | ⬜ 待配置（Agent 未创建）|
 | **API** | `copilot-studio` | ⬜ 待配置（Agent 未创建）|

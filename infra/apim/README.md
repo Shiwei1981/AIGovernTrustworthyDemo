@@ -7,7 +7,7 @@ APIM 配置脚本目录，管理 `AIGovernTrustworthyDemoAPIM` 中各 AI 服务�
 | API | Path | Backend | 状态 |
 |---|---|---|---|
 | RAG Governance Service | `/rag` | `AIGovernTrustworthyRAGApp` Web App | ✅ 脚本就绪，待执行 |
-| Native Model | `/native-model` | Azure OpenAI (via APIM MSI) | 🔲 待配置（MSI RBAC 需授权） |
+| Native Model | `/native-model` | Azure OpenAI (via APIM MSI) | ✅ 已配置（MSI RBAC + policy + diagnostics） |
 
 ## APIM 网络模式
 
@@ -45,6 +45,32 @@ RAG Web App 自带的手动测试 UI 不让浏览器直连 Internal APIM；UI �
 `/ui/responses` 服务端代理，再由该代理读取 `L4_RAG_SERVICE_URL`（即 APIM `/rag` base URL）
 发起后端调用。
 
+### `setup-native-model-api.sh`
+
+将 APIM `/native-model` API 配置为代理 Domain 4 Azure OpenAI 原生模型 deployment
+`AIGovernTrustworthyDemoNativeModel`。
+
+**执行一次即可；幂等（已存在的 API / operation / diagnostics 会 update 而非报错）。**
+
+```bash
+# 从仓库根执行
+bash infra/apim/setup-native-model-api.sh
+```
+
+该脚本完成：
+1. 给 APIM MSI 授 `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI`
+2. 创建或更新 API `native-model`
+3. 创建或更新 `POST /chat/completions`
+4. 设置 API 级策略：
+   - 注入 `traceparent`（W3C Trace Context）
+   - 用 APIM MSI 获取 `https://cognitiveservices.azure.com` token
+   - 注入 `Authorization: Bearer <msi-token>`
+   - 固定 `api-version=2025-01-01-preview`
+   - 出站加 `x-aigov-apim-request-id`
+   - 错误处理：502 + JSON 错误体
+5. 为 `native-model` 创建 API-level App Insights diagnostics
+6. 更新 `infra/target-registry/targets.json` 中 native model 条目的 APIM 状态说明
+
 ## 验证（执行后）
 
 ```bash
@@ -54,10 +80,14 @@ curl -s https://aigoverntrustworthydemoapim.azure-api.net/rag/health
 curl -s -X POST https://aigoverntrustworthydemoapim.azure-api.net/rag/responses \
   -H "Content-Type: application/json" \
   -d '{"input": "What are the four core functions of NIST AI RMF?"}'
+
+curl -s -X POST https://aigoverntrustworthydemoapim.azure-api.net/native-model/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"What does NIST AI RMF stand for?"}],"max_completion_tokens":128}'
 ```
 
 ## 后续未完成项
 
-- Native Model `/native-model` API：需先给 APIM MSI 授 `Cognitive Services OpenAI User` on `AIGovernTrustworthyAOAI`
 - 可选：在 `POST /responses` 上加 JWT 验证策略（`<validate-jwt>`），要求调用方持有有效 Entra token
+- 可选：在 `POST /native-model/chat/completions` 上加 JWT 验证策略（`<validate-jwt>`），要求调用方持有有效 Entra token
 - 可选：通过 Azure Front Door / App Gateway 为 Internal VNet APIM 提供公网入口

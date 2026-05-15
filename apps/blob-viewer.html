@@ -116,6 +116,12 @@
     <select id="filter-svc" onchange="filterRecords()">
       <option value="">全部 service_name</option>
     </select>
+    <select id="filter-time" onchange="filterRecords()">
+      <option value="24h">24 小时以内</option>
+      <option value="48h">48 小时以内</option>
+      <option value="7d">7 日以内</option>
+      <option value="all">所有</option>
+    </select>
     <button onclick="loadRecords()">🔄 刷新</button>
     <span id="status-label" style="font-size:12px;color:#718096;margin-left:auto"></span>
   </div>
@@ -254,9 +260,12 @@ function filterRecords() {
   const q  = document.getElementById('search-box').value.toLowerCase();
   const ft = document.getElementById('filter-type').value;
   const fs = document.getElementById('filter-svc').value;
+  const tf = document.getElementById('filter-time').value;
+  const now = Date.now();
   filteredRecords = allRecords.filter(r => {
     if (ft && r.meta.target_type !== ft) return false;
     if (fs && r.meta.service_name !== fs) return false;
+    if (!matchesTimeFilter(r.meta.occurred_at, tf, now)) return false;
     if (q) {
       const hay = [r.archive_id, r.meta.service_name, r.meta.target_type, r.meta.target_id, r.meta.model_name].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
@@ -265,6 +274,23 @@ function filterRecords() {
   });
   renderList();
   document.getElementById('record-count').textContent = `${filteredRecords.length} / ${allRecords.length}`;
+}
+
+function matchesTimeFilter(occurredAt, timeFilter, nowMs) {
+  if (!timeFilter || timeFilter === 'all') return true;
+  if (!occurredAt) return false;
+
+  const ts = Date.parse(occurredAt);
+  if (Number.isNaN(ts) || ts > nowMs) return false;
+
+  const windows = {
+    '24h': 24 * 60 * 60 * 1000,
+    '48h': 48 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+  };
+  const maxAge = windows[timeFilter];
+  if (!maxAge) return true;
+  return nowMs - ts <= maxAge;
 }
 
 function renderStats() {

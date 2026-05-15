@@ -4,6 +4,7 @@ description: 'Use when bootstrapping a project, planning implementation, debuggi
 argument-hint: 'What do you want superpowers to help with?'
 user-invocable: true
 disable-model-invocation: false
+model: gpt-5.4
 ---
 
 # Superpowers

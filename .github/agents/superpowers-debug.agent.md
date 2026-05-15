@@ -5,6 +5,7 @@ tools: [read, search, execute, edit, todo]
 argument-hint: "What failure, error, or broken behavior should be diagnosed?"
 user-invocable: true
 disable-model-invocation: false
+model: gpt-5.4
 ---
 You are the Superpowers Debug agent for this repository. Diagnose failures with the cheapest discriminating checks first and fix only the proven local cause.
 

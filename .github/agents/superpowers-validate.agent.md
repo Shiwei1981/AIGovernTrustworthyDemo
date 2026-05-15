@@ -5,6 +5,7 @@ tools: [read, search, edit, execute, todo]
 argument-hint: "What should be validated or hardened before shipping?"
 user-invocable: true
 disable-model-invocation: false
+model: gpt-5.4
 ---
 You are the Superpowers Validate agent for this repository. Tighten confidence around a targeted slice by adding or improving the smallest meaningful validation.
 

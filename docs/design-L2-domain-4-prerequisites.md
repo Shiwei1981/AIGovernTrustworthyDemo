@@ -68,16 +68,16 @@ Domain 4 的二级页面在展示 coverage、failure rate、red teaming、model 
 Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的统一观测方案。统一 AI Governance 证据链由五部分组成：
 
 1. `Azure API Management (APIM)`：所有可代理 HTTP hop 的默认 tracing 入口。
-2. `Azure AI Foundry tracing`：Foundry 原生模型、fine-tune 模型、Foundry Agent / Hosted Agent 的平台内部 tracing。
+2. `Azure AI Foundry tracing`：Foundry Agent / Hosted Agent 内部 span，以及使用 Foundry SDK / 平台原生 tracing 的模型调用链。
 3. `packages/shared-observability/`：跨应用共享 Python 组件，仅负责记录 Python 侧 LLM 调用证据，并写入薄索引事件。
-4. `Application Insights`：APIM tracing、Foundry tracing、Python evidence 事件的统一查询入口。
+4. `Application Insights / Azure Monitor Logs`：APIM tracing、适用时的 Foundry tracing、AOAI 平台诊断、Python evidence 事件的统一查询入口。
 5. `Blob archive`：统一保存每次 LLM 调用的完整 `input`、`output`、`metadata`。
 
 设计原则：
 
 1. 在所有可以开启 APIM 的情况下，开启 APIM tracing。
 2. 对于 LLM 调用，使用 Python 代码级 log 保存完整输入输出证据。
-3. 对于 Foundry 目标，全面开启 Foundry tracing。
+3. 对于 Foundry 目标，优先启用平台原生 tracing；其中 APIM → AOAI REST 代理链路的主平台证据由 APIM diagnostics + AOAI 平台诊断承担，不单独要求 Foundry Studio span。
 4. 统一查询以 App Insights / Azure Monitor Logs 为主，Blob 只作为证据打开位置。
 5. shared-observability 不再负责自建统一 tracing 系统，也不再要求生成 `correlation_id`。
 6. 所有自定义字段命名尽可能向 Foundry tracing 与 APIM tracing 原生命名靠拢。
@@ -87,7 +87,8 @@ Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的�
 | 对象 | 统一记录路径 |
 |---|---|
 | App 2 -> App 1 | APIM tracing + App 原生遥测 |
-| App 1 -> RAG / Foundry model / Foundry Agent / VM API | APIM tracing（若可代理）+ Web App / Python evidence |
+| App 1 -> RAG / AOAI native model / VM API | APIM tracing（若可代理）+ Web App / Python evidence；其中 APIM → AOAI REST 额外依赖 AOAI 平台诊断 |
+| App 1 -> Foundry Agent / Hosted Agent API | APIM tracing（若可代理）+ Python evidence；Agent 内部 hop 由 Foundry tracing 记录 |
 | Foundry Agent / Hosted Agent 内部 span | Foundry tracing |
 | Python 代码中的实际 LLM 调用 | Python evidence + Blob archive |
 | Evaluation / PyRIT 结果 | 结果事件 + 关联的 `trace_id` / `response_id` |
@@ -97,9 +98,9 @@ Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的�
 | 层 | 责任 |
 |---|---|
 | APIM | 记录所有可代理 HTTP hop 的 tracing、diagnostics、gateway/backends 信息 |
-| Azure AI Foundry tracing | 记录 Foundry 模型与 Agent 内部 spans |
+| Azure AI Foundry tracing | 记录 Foundry 内部 spans，以及 SDK / 平台支持的 Foundry tracing 路径；不覆盖所有 APIM → AOAI REST hop |
 | shared-observability Python 包 | 记录 Python LLM 调用完整证据，并写入薄索引事件 |
-| Application Insights | APIM tracing、Foundry tracing、Python evidence 的统一查询面 |
+| Application Insights | APIM tracing、适用时的 Foundry tracing、AOAI 平台诊断、Python evidence 的统一查询面 |
 | Blob archive | 保存完整 `input.json`、`output.json`、`metadata.json` |
 | Log Analytics | 复用现有工作区，承接 Application Insights 与 APIM 诊断查询 |
 
@@ -140,7 +141,7 @@ Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的�
 
 Application Insights 的管理对象分为三类：
 
-1. **平台 tracing**：APIM tracing 和 Foundry tracing 是调用链观测的主来源。
+1. **平台 tracing**：APIM tracing 和 Foundry tracing 是调用链观测的主来源；对 APIM 代理 AOAI REST 的 hop，AOAI 平台诊断作为补充证据。
 2. **LLM evidence**：RAG Web App、Tier 1 / Tier 2、VM API、runner、脚本在每次实际 LLM 调用后写一条薄 evidence 事件，并保留 Blob 索引。
 3. **结果事件**：Evaluation / PyRIT / smoke test 等脚本在 run 完成后写结果事件，必要时保留 `trace_id` / `response_id`。
 
@@ -193,25 +194,25 @@ Application Insights 的管理对象分为三类：
 
 ### 步骤总览
 
-| 步骤 | 名称 | 涉及系统 / 对象 | 执行主体 | 主要产物 |
-|---|---|---|---|---|
-| 1 | 准备观测基础设施（已完成） | Log Analytics、App Insights、APIM、Blob | Copilot + 用户授权 | 环境检查脚本、KQL 验证 |
-| 2 | 建立 RAG 服务 | Azure Web App、APIM、AOAI、Blob | Copilot + 用户授权 | Web App 代码、PDF 目录、轻量级检索实现、APIM `/rag` |
-| 3 | Foundry 原生模型部署 | Azure AI Foundry | Copilot + 用户授权 | 模型清单、验证命令 |
-| 4 | Foundry fine-tune 模型 | Azure AI Foundry | Copilot + 用户授权 | fine-tune 脚本、部署清单 |
-| 5 | VM Hugging Face 模型 + API | Azure VM | Copilot + 用户 SSH | 安装脚本、API 服务代码 |
-| 6 | VM 模型接入 shared-observability（步骤 5 扩展） | VM API、Blob、App Insights | Copilot + 用户授权 | observability 接入代码、验证脚本 |
-| 7 | Foundry 自定义 Agent | Azure AI Foundry | Copilot + 用户 Portal | Agent 清单、调用脚本 |
-| 8 | Copilot Studio Agent | Copilot Studio、Direct Line | 用户 UI + Copilot 验证 | UI 操作指南、验证脚本 |
-| 9 | Tier 1 Consumer App | App Service、APIM、全部 AI 后端 | Copilot + 用户授权 | API 代码、connector、部署脚本 |
-| 10 | Tier 2 Consumer App | App Service、APIM、Tier 1 | Copilot + 用户授权 | API 代码、KQL 追踪验证 |
-| 11 | App Insights 遥测字段配置 | shared-observability、App Insights | Copilot + 用户授权 | 字段规范、KQL 验证语句 |
-| 12 | Foundry Tracing 能力 | Azure AI Foundry、App Insights | Copilot + 用户 Portal | tracing 配置说明、适用范围表 |
-| 13 | Foundry Evaluations 能力 | Azure AI Foundry Evaluations | Copilot + 用户授权 | target 清单、评估脚本 |
-| 14 | Azure DevOps Work Items | Azure DevOps | Copilot + 用户 PAT | ADO 字段设计、写入脚本 |
-| 15 | Red Teaming 环境（PyRIT） | PyRIT、全部目标 endpoint | Copilot + 用户授权 | connector 代码、攻击集 |
-| 16 | 指标状态语义定义 | Domain 4 报表、API | Copilot + 用户确认阈值 | 状态语义表、字段定义 |
-| 17 | 首页与二级页指标映射校准 | L1/L2 页面、Domain 4 API | Copilot + 用户确认 | 页面设计、API 设计、开发任务清单 |
+| 步骤 | 名称 | 状态 | 涉及系统 / 对象 | 执行主体 | 主要产物 |
+|---|---|---|---|---|---|
+| 1 | 准备观测基础设施 | ✅ 已完成 | Log Analytics、App Insights、APIM、Blob | Copilot + 用户授权 | 环境检查脚本、KQL 验证 |
+| 2 | 建立 RAG 服务 | ✅ 已完成 | Azure Web App、APIM、AOAI、Blob | Copilot + 用户授权 | Web App 代码（v1.0.4）、PDF 目录、轻量级检索实现、APIM `/rag` |
+| 3 | Foundry 原生模型部署 | ✅ 已完成 | Azure OpenAI、APIM | Copilot + 用户授权 | 模型 deployment、APIM `/native-model`、target registry、验证命令 |
+| 4 | Foundry fine-tune 模型 | ✅ 已完成 | Azure AI Foundry | Copilot + 用户授权 | fine-tune job、deployment、APIM `/finetune-model`、5000 Q&A 归档、target registry |
+| 5 | VM Hugging Face 模型 + API | ⬜ 待开始 | Azure VM | Copilot + 用户 SSH | 安装脚本、API 服务代码 |
+| 6 | VM 模型接入 shared-observability（步骤 5 扩展） | ⬜ 待开始 | VM API、Blob、App Insights | Copilot + 用户授权 | observability 接入代码、验证脚本 |
+| 7 | Foundry 自定义 Agent | ⬜ 待开始 | Azure AI Foundry | Copilot + 用户 Portal | Agent 清单、调用脚本 |
+| 8 | Copilot Studio Agent | ⬜ 待开始 | Copilot Studio、Direct Line | 用户 UI + Copilot 验证 | UI 操作指南、验证脚本 |
+| 9 | Tier 1 Consumer App | ⬜ 待开始 | App Service、APIM、全部 AI 后端 | Copilot + 用户授权 | API 代码、connector、部署脚本 |
+| 10 | Tier 2 Consumer App | ⬜ 待开始 | App Service、APIM、Tier 1 | Copilot + 用户授权 | API 代码、KQL 追踪验证 |
+| 11 | App Insights 遥测字段配置 | ⬜ 待开始 | shared-observability、App Insights | Copilot + 用户授权 | 字段规范、KQL 验证语句 |
+| 12 | Foundry Tracing 能力 | ⬜ 待开始 | Azure AI Foundry、App Insights | Copilot + 用户 Portal | tracing 配置说明、适用范围表 |
+| 13 | Foundry Evaluations 能力 | ⬜ 待开始 | Azure AI Foundry Evaluations | Copilot + 用户授权 | target 清单、评估脚本 |
+| 14 | Azure DevOps Work Items | ⬜ 待开始 | Azure DevOps | Copilot + 用户 PAT | ADO 字段设计、写入脚本 |
+| 15 | Red Teaming 环境（PyRIT） | ⬜ 待开始 | PyRIT、全部目标 endpoint | Copilot + 用户授权 | connector 代码、攻击集 |
+| 16 | 指标状态语义定义 | ⬜ 待开始 | Domain 4 报表、API | Copilot + 用户确认阈值 | 状态语义表、字段定义 |
+| 17 | 首页与二级页指标映射校准 | ⬜ 待开始 | L1/L2 页面、Domain 4 API | Copilot + 用户确认 | 页面设计、API 设计、开发任务清单 |
 
 ---
 
@@ -231,7 +232,11 @@ Application Insights 的管理对象分为三类：
 - **可能需要用户操作**：如果 SPN 权限不足，需要用户登录 Azure CLI 或在 Portal 中授予权限。
 - **产物**：`scripts/` 下的环境检查与配置脚本；本文档中的资源清单、APIM 配置顺序与 KQL 验证语句。
 
-### 步骤 2：建立 RAG 服务
+### 步骤 2：建立 RAG 服务（已完成）
+
+> 详细需求设计见：`docs/design-L3-domain-4-rag-governance-service.md`
+
+- **当前状态（2026-05-14）**：`AIGovernTrustworthyRAGApp` v1.0.4 已部署；APIM `/rag` 已配置并联通；`/rag/responses` 和 `/rag/health` 可用；APIM 全链路 trace_id 验证通过。
 
 1. 复用现有 App Service Plan `AIGovernDemoASP`，创建 RAG Web App `AIGovernTrustworthyRAGApp`。
 2. 将 AI Governance 行业标准 PDF 放入仓库中的 `apps/rag-service/knowledge-base/`，随应用部署或启动时加载。
@@ -248,33 +253,41 @@ Application Insights 的管理对象分为三类：
 - **产物**：RAG Service 需求设计、Web App 代码、PDF 目录约定、APIM `/rag` 配置、App Insights 遥测字段说明。
 - **注意**：本步骤只建设 RAG 服务，不包含消费端应用；Tier 1 Consumer App 在步骤 9 中开发。
 
-### 步骤 3：Foundry 原生模型部署
+### 步骤 3：Foundry 原生模型部署（已完成）
+
+> 详细需求设计见：`docs/design-L3-domain-4-foundry-native-model.md`
 
 1. 查询当前 Azure AI Foundry / Azure OpenAI 可用模型部署。
 2. 选择一个基础文本模型作为原生模型目标。
 3. 如果未部署，通过脚本或 Portal 创建模型 deployment。
 4. 记录模型名称、deployment 名称、版本、endpoint、project 信息。
-5. 在可代理场景下通过 APIM 暴露该 endpoint，并开启 Foundry tracing。
+5. 在可代理场景下通过 APIM 暴露该 endpoint，并保留 APIM diagnostics / AOAI 平台诊断；如后续引入 Foundry SDK tracing 路径，再补充对应 Foundry tracing。
 6. 验证推理端点可调用。
 7. 将该模型作为独立 target type 写入后续 evaluation / red teaming / dashboard 设计。
 
 - **Copilot 可执行**：资源查询、调用验证、部署脚本草案、模型清单文档。
 - **可能需要用户操作**：模型部署配额、区域选择或 Portal 内模型部署授权。
-- **产物**：模型 deployment 清单、验证命令、报表对象映射。
+- **产物**：步骤 3 专用需求设计文档、模型 deployment 清单、验证命令、报表对象映射。
+- **当前状态（2026-05-14）**：`AIGovernTrustworthyDemoNativeModel` 已完成直连验证；APIM `/native-model` 已配置；APIM MSI 已获 AOAI 访问角色；API-level App Insights diagnostics 已启用；AOAI 平台诊断日志已验证可见 deployment / model / version。
 
 ### 步骤 4：Foundry fine-tune 模型
+
+> 详细需求设计见：`docs/design-L3-domain-4-foundry-finetune-model.md`
+
+- **当前状态（2026-05-15）**：步骤 4 已完成自动化闭环：`aigoverntrustworthydemo-finetune` container 已创建，5000 行 AI Governance 训练 JSONL 已生成并归档到 `docs/finetune-qa-archive/`，训练文件已上传到 Storage；fine-tune job `ftjob-ae456ec3dc4d468b87ecb8512ad33f86` 已在 `aigoverntrustworthyfoundry` account endpoint 上成功完成，并生成 fine-tuned model `gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo`；deployment `AIGovernTrustworthyDemoFineTuneModel` 已创建；APIM `/finetune-model` 已配置并完成烟测。早先 `invalidPayload: The specified base model does not support fine-tuning.` 已确认为自动化调用缺少 `trainingType=GlobalStandard` 且 endpoint 选择不一致导致。
+- **执行约束（2026-05-14）**：步骤 4 的正式实施固定为**全程 AI 自动化**；除用户已明确批准的 3 个创建动作外，AI 不得创建或删除其他云资源。当前已批准：在 `aigoverntrustworthysa` 下创建 `aigoverntrustworthydemo-finetune` container、创建 fine-tune job、创建 `AIGovernTrustworthyDemoFineTuneModel` deployment；并允许使用 SPN 为所需账号授权。训练文件上传必须复用 `.env.local.L4` 中现有 storage 变量，中间 Q&A 还需在 `docs/finetune-qa-archive/` 下保留一份归档副本。
 
 1. 明确 fine-tune 的测试目标：只为 Domain 4 测试提供一个可治理对象，不追求业务效果最大化。
 2. 设计最小训练数据格式和样例数据来源。
 3. 准备训练数据清洗、格式转换和上传脚本。
 4. 提交 fine-tune job，并记录 job id、基础模型、输出模型信息。
 5. 部署 fine-tuned model 到可调用 endpoint。
-6. 在可代理场景下通过 APIM 暴露该 endpoint，并开启 Foundry tracing。
+6. 在可代理场景下通过 APIM 暴露该 endpoint，并在支持的平台 / SDK 路径启用 Foundry tracing。
 7. 验证 endpoint 可调用，并纳入 evaluation / red teaming / dashboard 独立展示。
 
-- **Copilot 可执行**：训练数据样例、格式转换脚本、提交 job 脚本、验证脚本。
-- **可能需要用户操作**：如果 fine-tune 权限、配额或 Portal 审批不足，需要用户授权或手工启动。
-- **产物**：fine-tune 需求设计、训练数据格式、job 操作脚本、部署清单。
+- **Copilot 可执行**：在既有资源与权限满足前提下，自动化完成 PDF -> Q&A -> JSONL -> Storage 上传、APIM 配置脚本、验证脚本与文档归档设计。
+- **前置阻塞**：若 fine-tune 权限、配额、Storage / APIM / AOAI / Foundry / App Insights 访问不足，或实施中发现还需创建未获批准的其他类型云资源，则不得继续推进。
+- **产物**：fine-tune 需求设计、训练数据格式、实施前预置条件清单、Q&A 归档路径设计、job / 部署 / APIM 自动化脚本设计。
 
 ### 步骤 5：VM Hugging Face 模型 + API
 

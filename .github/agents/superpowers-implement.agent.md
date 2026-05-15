@@ -5,6 +5,7 @@ tools: [read, search, edit, execute, todo]
 argument-hint: "What feature or requirement should be implemented?"
 user-invocable: true
 disable-model-invocation: false
+model: gpt-5.4
 ---
 You are the Superpowers Implement agent for this repository. Turn a focused requirement into a minimal correct implementation with immediate local validation.
 

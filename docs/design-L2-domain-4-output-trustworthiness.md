@@ -29,7 +29,7 @@
 
 | 治理对象 | 治理策略 | 备注 |
 |---|---|---|
-| Azure AI Foundry 托管模型 | Evaluation + Tracing + Red Teaming | 全面覆盖 |
+| Azure AI Foundry 托管模型 | Evaluation + Tracing + Red Teaming | 全面覆盖；Tracing 由 Foundry tracing 或 APIM + AOAI 平台诊断承担 |
 | Azure AI Foundry Agent | Evaluation + Red Teaming | 普通 agent 与 RAG Service 分开治理 |
 | RAG Service（知识检索问答服务） | Evaluation + Red Teaming + App Insights + Blob evidence | Web App 内部写入 LLM input/output/error，并配置 response_id、model_name、model_version |
 | VM 中自建模型 | 红队外部调用（PyRIT） + observability 组件留痕 | 不在 VM 内部做 Foundry tracing；由 VM API / runner 写入统一证据链 |
@@ -63,13 +63,13 @@
 
 | 指标 | 图形 | 是否本期实现 | 设计确认状态 | 指标解释 | 指标数据来源 |
 |---|---|---|---|---|---|
-| Traceable Output Rate | donut | 是 | 已确认 | 已附带 response_id 或等效追踪标识的输出占比（仅 Azure 托管，VM 不计） | Application Insights（response_id 字段）、Azure AI Foundry Tracing |
+| Traceable Output Rate | donut | 是 | 已确认 | 已附带 response_id 或等效追踪标识的输出占比（仅 Azure 托管，VM 不计） | Application Insights（response_id 字段）、Azure AI Foundry Tracing / AOAI 平台诊断 |
 | Source Attribution Rate | donut | 是 | 已确认 | 输出中包含来源引用的比例（无 RAG 时显示 N/A） | Azure AI Foundry Evaluations、RAG 响应 citation、Web App Blob evidence metadata |
 | Model Identity Capture Rate | donut / stacked bar | 是 | 已确认 | 已附带 model_name + model_version 的调用占比；按平台（Azure / VM）分拆 | Application Insights（model_name、model_version 字段）、Blob archive metadata |
 
 **数据来源**：
 - Application Insights：自定义属性 `response_id`、`model_name`、`model_version`（RAG Web App / App / runner 写入）
-- Azure AI Foundry Tracing：用于 Foundry 原生模型、fine-tune、普通 Foundry Agent 等托管目标；RAG Web App 不依赖 Hosted Agent tracing
+- Azure AI Foundry Tracing / AOAI 平台诊断：Foundry Agent 和 SDK tracing 路径优先使用 Foundry tracing；APIM 代理 AOAI REST 原生模型路径使用 APIM diagnostics + AOAI 平台诊断；RAG Web App 不依赖 Hosted Agent tracing
 - Blob archive metadata：保存 RAG Web App / VM / App / runner 写入的 model_name、model_version、payload 引用、citation 数量
 
 **计算逻辑**：

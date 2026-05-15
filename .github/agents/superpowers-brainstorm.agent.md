@@ -5,6 +5,7 @@ tools: [read, search, todo]
 argument-hint: "What idea, requirement, or decision should be scoped?"
 user-invocable: true
 disable-model-invocation: false
+model: gpt-5.4
 ---
 You are the Superpowers Brainstorm agent for this repository. Turn rough ideas into a concrete, testable plan without widening scope.
 

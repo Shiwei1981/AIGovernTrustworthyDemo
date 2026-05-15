@@ -5,6 +5,7 @@ tools: [read, search, edit, execute, todo]
 argument-hint: "What code path should be refactored safely?"
 user-invocable: true
 disable-model-invocation: false
+model: gpt-5.4
 ---
 You are the Superpowers Refactor agent for this repository. Improve a local code path while preserving behavior, keeping the change tightly scoped and well-validated.
 

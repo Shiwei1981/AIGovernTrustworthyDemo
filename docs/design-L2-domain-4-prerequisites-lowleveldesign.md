@@ -18,7 +18,7 @@
   - Hub：`aigoverndemoaihub`（AIGovernDemoRG）
   - Project：`aigovenaihubproject`（AIGovernDemoRG）
 - Microsoft Foundry Account / Project（新后端）：步骤 2 **不再作为 RAG 主路径依赖**；如后续其他步骤需要，再单独设计
-- **Azure OpenAI Service（Domain 4 专用）**：**新建 `AIGovernTrustworthyAOAI`**（`AIGovernTrustworthyRG`），用于原生模型 / fine-tune / 兼容性验证；RAG Web App 直接调用其模型 deployment
+- **Azure OpenAI Service（Domain 4 专用）**：**已创建 `AIGovernTrustworthyAOAI`**（`AIGovernTrustworthyRG`），用于原生模型 / fine-tune / 兼容性验证；RAG Web App 直接调用其模型 deployment
 - App Insights：**复用现有实例**（`APPLICATIONINSIGHTS_CONNECTION_STRING`），不新建
 - App Service Plan：**复用现有 `AIGovernDemoASP`**，不再新建 Domain 4 专用 Plan
 - API Management：**新建 `AIGovernTrustworthyDemoAPIM`**，作为所有可代理 HTTP hop 的统一入口与 tracing 网关
@@ -241,7 +241,7 @@ az role assignment create \
 
 #### 4.2.3 Azure OpenAI Service（Domain 4 专用）
 
-> **待创建（用户 Portal 操作）**：新建专属于 Domain 4 的 Azure OpenAI 资源，归入 `AIGovernTrustworthyRG`。RAG Web App 直接调用该资源中的模型 deployment；该 AOAI 资源也用于原生模型、fine-tune 和兼容性验证。
+> **✅ 已确认（S6，步骤 3 已完成）**：`AIGovernTrustworthyAOAI` 已创建并用于步骤 3。当前已验证 native deployment `AIGovernTrustworthyDemoNativeModel` 可直连调用，APIM `/native-model` 已通过 MSI 代理该 deployment，AOAI 平台诊断中可见 deployment / model / version。
 
 | 属性 | 值 |
 |---|---|
@@ -250,7 +250,7 @@ az role assignment create \
 | Location | `canadaeast`（或与 Foundry Hub 同 region） |
 | SKU | `S0` |
 | 访问控制 | `disableLocalAuth = true`（仅 Entra token，不用 API Key） |
-| Foundry Connection 名 | `AIGovernTrustworthyAOAI`（在 Foundry Hub 的 Connected Resources 中添加） |
+| Foundry Connection 名 | `AIGovernTrustworthyAOAI`（如需在 Foundry Hub / Project 中使用，可按连接资源方式添加） |
 | 环境变量 | `L4_AOAI_ENDPOINT`，`L4_AOAI_SERVICE_NAME` |
 
 **模型 Deployment（在此资源下创建）**：
@@ -258,9 +258,9 @@ az role assignment create \
 | Deployment 名 | 模型 | 用途 |
 |---|---|---|
 | `AIGovernTrustworthyDemoNativeModel` | `gpt-5.4-nano` | Native Model（步骤 3）；同时作为 RAG Web App 默认生成模型 |
-| `AIGovernTrustworthyDemoFineTuneModel` | Fine-tune 结果 | Fine-tune 部署（步骤 5） |
+| `AIGovernTrustworthyDemoFineTuneModel` | Fine-tune 结果 | Fine-tune 部署（步骤 4） |
 
-**📋 Portal 操作步骤**：
+**📋 Portal 重建步骤（仅在需要重建时）**：
 1. Portal → Azure OpenAI → **Create** → 资源组 `AIGovernTrustworthyRG`，名称 `AIGovernTrustworthyAOAI`，Location `canadaeast`，SKU S0
 2. 创建后，在资源 Overview 记录 Endpoint URL → 填入 `L4_AOAI_ENDPOINT`
 3. 将此资源作为 **Connection** 添加到 Foundry Hub `aigoverndemoaihub`：
@@ -319,28 +319,30 @@ az search service create \
 
 ---
 
-#### 4.2.5 Storage Account（fine-tune 数据 + RAG 文档上传）
+#### 4.2.5 Storage Account（复用；fine-tune 数据 + RAG 文档上传）
 
 | 属性 | 值 |
 |---|---|
-| 资源名 | `aigoverntrustworthydemostorage` |
+| 资源名 | `aigoverntrustworthysa` |
 | SKU | `Standard_LRS` |
 | Location | `canadaeast` |
 | Container（blob）| `aigoverntrustworthydemo-rag-docs`（RAG 原始文档），`aigoverntrustworthydemo-finetune`（fine-tune 训练集） |
 
 ```bash
 az storage account create \
-  --name aigoverntrustworthydemostorage \
+  --name aigoverntrustworthysa \
   --resource-group AIGovernTrustworthyRG \
   --location canadaeast \
   --sku Standard_LRS \
   --kind StorageV2 \
   --tags AI=AIGovernTrustworthyDemo-Storage Owner=weishi@MngEnvMCAP029189.onmicrosoft.com
 
-az storage container create --account-name aigoverntrustworthydemostorage --name aigoverntrustworthydemo-rag-docs
-az storage container create --account-name aigoverntrustworthydemostorage --name aigoverntrustworthydemo-finetune
+az storage container create --account-name aigoverntrustworthysa --name aigoverntrustworthydemo-rag-docs
+az storage container create --account-name aigoverntrustworthysa --name aigoverntrustworthydemo-finetune
 # 记录 connection string → L4_STORAGE_CONNECTION_STRING
 ```
+
+> **当前执行约束（2026-05-14）**：以上 `create` 命令主要作为现有资源来源的历史记录。当前步骤 4 已获得例外授权，可由 AI 自动化在 `aigoverntrustworthysa` 中创建 `aigoverntrustworthydemo-finetune` container；此外还允许创建 fine-tune job 与 `AIGovernTrustworthyDemoFineTuneModel` deployment。若执行中还需要创建其他类型云资源，应视为新的前置阻塞并先请求用户确认。
 
 > **✅ 已确认（S2）**：POC fine-tune，验证 AI Governance 场景的模型调优与治理可追溯性。
 
@@ -349,22 +351,30 @@ az storage container create --account-name aigoverntrustworthydemostorage --name
 | 属性 | 值 |
 |---|---|
 | 格式 | JSONL，Azure OpenAI **chat completion** 格式（`messages` 数组） |
-| 总条数 | 210 条（200 正确 + 10 故意错误） |
-| 内容来源 | NIST AI RMF、NIST AI 600-1 |
-| 生成方式 | 由脚本调用 GPT-5.4 自动生成问答对 |
-| 故意错误条数 | 10 条（同主题，答案有误）；用于演示 Red Teaming 检测效果 |
-| Fine-tune 目标模型 | Azure AI Foundry 上的公开基础模型（如 `gpt-5.4-nano`，以实际可用为准）|
+| 总条数 | 5000 条 |
+| 内容来源 | 用户上传的 5 个 AI Governance 主题 PDF 文档 |
+| 生成方式 | 先用已存在的 native model `AIGovernTrustworthyDemoNativeModel`（`gpt-5.4-nano`）基于 5 个 PDF 内容批量生成问答对，再整理为 JSONL |
+| 故意错误条数 | 0 条（本轮 draft 不把故意错误样本放入训练集；如需要对照，单独保留 eval / red teaming 数据集） |
+| Fine-tune 目标模型 | `gpt-4.1` |
 | 部署后 API 格式 | 与基础模型一致（OpenAI chat completion 格式） |
-| 训练文件路径 | `aigoverntrustworthydemo-finetune/aigoverntrustworthydemo-qa-210.jsonl`（上传到 `aigoverntrustworthydemostorage`） |
+| 训练文件路径 | `aigoverntrustworthydemo-finetune/aigoverntrustworthydemo-qa-5000.jsonl`（上传到 `aigoverntrustworthysa`） |
+| Storage 变量来源 | `.env.local.L4` 中的 `L4_STORAGE_ACCOUNT_NAME`、`L4_STORAGE_CONNECTION_STRING`、`L4_STORAGE_CONTAINER_FINETUNE` |
+| 仓库归档路径 | `docs/finetune-qa-archive/aigoverntrustworthydemo-qa-5000.jsonl` |
 
 **训练数据 JSONL 格式示例**：
 
 ```jsonl
-{"messages": [{"role": "system", "content": "You are an AI governance expert specializing in NIST AI frameworks."}, {"role": "user", "content": "What is the primary purpose of the NIST AI Risk Management Framework?"}, {"role": "assistant", "content": "The NIST AI RMF provides a structured approach to managing risks related to AI systems throughout their lifecycle..."}]}
-{"messages": [{"role": "system", "content": "You are an AI governance expert specializing in NIST AI frameworks."}, {"role": "user", "content": "According to NIST AI 600-1, what is prompt injection?"}, {"role": "assistant", "content": "[INTENTIONALLY WRONG - for red teaming demo] Prompt injection is a technique for optimizing AI model performance by injecting structured prompts..."}]}
+{"messages": [{"role": "system", "content": "You are an AI governance expert specializing in AI governance frameworks and controls."}, {"role": "user", "content": "What is the primary purpose of the NIST AI Risk Management Framework?"}, {"role": "assistant", "content": "The NIST AI RMF provides a structured approach to identifying, assessing, managing, and governing AI risks across the lifecycle of an AI system."}]}
+{"messages": [{"role": "system", "content": "You are an AI governance expert specializing in AI governance frameworks and controls."}, {"role": "user", "content": "Why is traceability important in AI governance?"}, {"role": "assistant", "content": "Traceability helps organizations understand which model, data, prompts, and control points were involved in a decision, making governance, audit, and incident analysis possible."}]}
 ```
 
-**注意**：故意错误的条目在生成脚本中标记 `"label": "intentionally_wrong"`，在上传训练时需去除此字段；但在 eval 数据集版本中保留，用于 red teaming 验证。
+**注意**：
+
+1. 本轮 draft 训练集不混入故意错误样本。若后续需要行为对照或红队样本，应保留独立的 eval / red teaming 数据集，而不是直接并入 fine-tune 训练文件。
+2. 2026-05-14 对 `aigoverntrustworthyfoundry` / `AIGovernTrustworthyAOAI` 执行 `az cognitiveservices account list-models` 的结果显示：`gpt-5.4-nano` 没有 `capabilities.FineTuneTokensMaxValue` 且 `finetuneCapabilities = null`；同一 catalog 中 `gpt-4.1`、`gpt-4.1-nano`、`gpt-4.1-mini`、`gpt-4o-mini`、`gpt-5.4-mini` 均暴露 fine-tune 能力字段。当前步骤 4 选用 `gpt-4.1`，这是用户确认后的 base model 选择。
+3. 当前步骤 4 要求所有具体操作由 AI 自动化完成；除已批准的 fine-tune container、fine-tune job、fine-tuned deployment 外，不得创建或删除其他云资源。因此 Storage 账户仍固定复用 `.env.local.L4` 所指向的既有 `aigoverntrustworthysa`。
+4. 如脚本运行时需要 `OTEL_SERVICE_NAME`，应以进程级环境变量注入，不新增新的 `.env.local.L4` 键名。
+5. 2026-05-15 实际运行结果：`aigoverntrustworthydemo-finetune` container 已创建，5000 行训练 JSONL 已生成并上传；fine-tune job `ftjob-ae456ec3dc4d468b87ecb8512ad33f86` 已通过 `aigoverntrustworthyfoundry` account endpoint 创建并成功完成。早先 `invalidPayload: The specified base model does not support fine-tuning.` 已确认是自动化调用缺少 `trainingType=GlobalStandard` 且 endpoint 选择不一致导致；当前平台已返回 fine-tuned model `gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo`，deployment `AIGovernTrustworthyDemoFineTuneModel` 与 APIM `/finetune-model` 均已配置完成。
 
 ---
 
@@ -634,7 +644,7 @@ L4_AI_FOUNDRY_PROJECT_ENDPOINT=https://0ccc5150-37cd-4136-8f18-02728d0b38b7.work
 
 # ── Azure AI Foundry · 模型部署 ────────────────────────────────────────────
 L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT=AIGovernTrustworthyDemoNativeModel
-L4_FOUNDRY_NATIVE_MODEL_ENDPOINT=<to-be-created>
+L4_FOUNDRY_NATIVE_MODEL_ENDPOINT=https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel/chat/completions?api-version=2025-01-01-preview
 L4_FOUNDRY_FINETUNE_MODEL_DEPLOYMENT=AIGovernTrustworthyDemoFineTuneModel
 L4_FOUNDRY_FINETUNE_MODEL_ENDPOINT=<to-be-created>
 
@@ -656,7 +666,7 @@ L4_AI_SEARCH_ADMIN_KEY=<to-be-created>
 L4_AI_SEARCH_QUERY_KEY=<to-be-created>
 
 # ── Storage（fine-tune 数据 + RAG 文档）────────────────────────────────────
-L4_STORAGE_ACCOUNT_NAME=aigoverntrustworthydemostorage
+L4_STORAGE_ACCOUNT_NAME=aigoverntrustworthysa
 L4_STORAGE_CONNECTION_STRING=<to-be-created>
 L4_STORAGE_CONTAINER_RAG_DOCS=aigoverntrustworthydemo-rag-docs
 L4_STORAGE_CONTAINER_FINETUNE=aigoverntrustworthydemo-finetune
@@ -697,12 +707,13 @@ L4_TARGET_REGISTRY_VERSION=1
 | M3 | Observability Blob Container | `ai-invocation-archive` | — | — | N/A | `L4_OBSERVABILITY_BLOB_CONTAINER` | 已手动创建 |
 | M4 | API Management | `AIGovernTrustworthyDemoAPIM` | `AIGovernTrustworthyRG` | Developer stv2，canadaeast，VNet Internal | `AIGovernTrustworthyDemo-APIM` | `L4_APIM_GATEWAY_URL` | ✅ 已创建，VNet Internal 配置完成 |
 | M5 | App Service Plan（复用） | `AIGovernDemoASP` | `AIGovernDemoRG` | B3，Linux，canadaeast | 现有资源 | `L4_APP_SERVICE_PLAN_NAME` | 已存在 |
+| M5A | Azure OpenAI Service | `AIGovernTrustworthyAOAI` | `AIGovernTrustworthyRG` | S0，canadaeast，`disableLocalAuth=true` | `AIGovernTrustworthyDemo-AOAI` | `L4_AOAI_ENDPOINT` | ✅ 已创建；native deployment 已验证；APIM `/native-model` 已接入 |
 | M6 | RAG Web App | `AIGovernTrustworthyRAGApp` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5；v1.0.4；VNet 集成（default subnet）；WEBSITE_DNS_SERVER=168.63.129.16 | `AIGovernTrustworthyDemo-RAGService` | `L4_RAG_APP_URL` | ✅ 已创建并部署（v1.0.4，含 /ui/responses 代理，APIM 全链路 trace_id 验证通过）|
 | M7 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier1App` | `L4_TIER1_APP_URL` | 待创建 |
 | M8 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier2App` | `L4_TIER2_APP_URL` | 待创建 |
 | M9 | Copilot Studio Agent | `AIGovernTrustworthyDemoCopilotStudioAgent` | Copilot Studio（Power Platform） | — | N/A | `L4_COPILOT_STUDIO_BOT_ID`、`L4_COPILOT_STUDIO_DIRECTLINE_SECRET` | 待创建 |
 
-> 当前 POC 的统一观测通过 `APIM + Foundry tracing + shared-observability + Application Insights + Blob archive` 落地。
+> 当前 POC 的统一观测通过 `APIM +（适用时的 Foundry tracing / AOAI 平台诊断）+ shared-observability + Application Insights + Blob archive` 落地。
 
 ---
 
@@ -717,14 +728,14 @@ L4_TARGET_REGISTRY_VERSION=1
 | A5 | SPN | `AIGovernTrustworthyDemoPyRITRunnerSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_PYRIT_RUNNER_CLIENT_ID`、`L4_PYRIT_RUNNER_CLIENT_SECRET` |
 | A6 | Azure AI Search（fallback） | `aigoverntrustworthysearch` | `AIGovernTrustworthyRG` | `az search service create` | `AIGovernTrustworthyDemo-RAGSearch` | `L4_AI_SEARCH_ADMIN_KEY`、`L4_AI_SEARCH_QUERY_KEY` |
 | A7 | AI Search 索引（fallback） | `aigoverntrustworthydemo-rag-index` | — | Python ingestion 脚本 | N/A | `L4_AI_SEARCH_INDEX_NAME`（已知） |
-| A8 | Storage Account | `aigoverntrustworthydemostorage` | `AIGovernTrustworthyRG` | `az storage account create` | `AIGovernTrustworthyDemo-Storage` | `L4_STORAGE_CONNECTION_STRING` |
+| A8 | Storage Account（复用） | `aigoverntrustworthysa` | `AIGovernTrustworthyRG` | 复用现有 Storage Account | `AIGovernTrustworthyDemo-Storage` | `L4_STORAGE_CONNECTION_STRING` |
 | A9 | Storage Container | `aigoverntrustworthydemo-rag-docs` | — | `az storage container create` | N/A | — |
 | A10 | Storage Container | `aigoverntrustworthydemo-finetune` | — | `az storage container create` | N/A | — |
 | A11 | Azure VM | `AIGovernTrustworthyDemoVM` | `AIGovernTrustworthyRG` | `az vm create` | `AIGovernTrustworthyDemo-HuggingFaceVM` | `L4_VM_PRIVATE_IP` |
 | A12 | Network Security Group | `AIGovernTrustworthyDemoVMNSG` | `AIGovernTrustworthyRG` | `az network nsg create` | `AIGovernTrustworthyDemo-HuggingFaceVM` | — |
-| A13 | Azure AI Foundry 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModel` | `aigoverndemofoundryproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT` |
-| A14 | Azure AI Foundry Fine-tune Deployment | `AIGovernTrustworthyDemoFineTuneModel` | `aigoverndemofoundryproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_FINETUNE_MODEL_DEPLOYMENT` |
-| A15 | Azure AI Foundry Agent | `AIGovernTrustworthyDemoFoundryAgent` | `aigoverndemofoundryproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_AGENT_ID` |
+| A13 | Azure OpenAI 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModel` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT` |
+| A14 | Azure OpenAI Fine-tune Deployment | `AIGovernTrustworthyDemoFineTuneModel` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_FINETUNE_MODEL_DEPLOYMENT` |
+| A15 | Azure AI Foundry Agent | `AIGovernTrustworthyDemoFoundryAgent` | `AIGovernDemoRG / aigovenaihubproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_AGENT_ID` |
 | A16 | VM 模型安装 | Phi-3-mini via ollama | VM 内部 | SSH + 初始化脚本 | N/A | — |
 | A17 | RBAC 角色授权 | Deploy SPN + RAG / Tier1 / Tier2 等应用运行时 SPN | 各资源作用域 | `az role assignment create` | N/A | — |
 
@@ -749,7 +760,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | # | 决策内容 | 涉及步骤 | 状态 |
 |---|---|---|---|
 | S1 | RAG 主路径锁定为 Azure Web App + 代码切块 + 进程内轻量级检索；AI Search schema 仅保留 fallback | 步骤 2（RAG Service） | ✅ 已确认 |
-| S2 | Fine-tune：JSONL chat completion 格式，210 条（200 正确 + 10 故意错误），来源 NIST AI RMF + NIST AI 600-1，目标模型 gpt-5.4-nano 或同类可用模型 | 步骤 4（fine-tune 模型） | ✅ 已确认 |
+| S2 | Fine-tune：JSONL chat completion 格式，5000 条 AI 生成 Q&A，主题为 AI Governance，要求尽量覆盖用户上传的 5 个 PDF；Q&A 生成阶段复用 native model `gpt-5.4-nano`，真正 fine-tune base model 使用 `gpt-4.1`；训练文件上传复用 `.env.local.L4` 中既有 storage，且问答对需在 `docs/finetune-qa-archive/` 留档 | 步骤 4（fine-tune 模型） | ✅ 已确认 |
 | S3 | VM CPU-only，Standard_D4s_v3，使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF，~2.2GB），通过 ollama 暴露 OpenAI 兼容 API | 步骤 5（VM 模型） | ✅ 已确认 |
 | S4 | Observability Blob archive 全新建设，由用户手动创建，当前已创建（`aigoverntrustworthysa` + `ai-invocation-archive`） | 步骤 1（基础设施） | ✅ 已确认 |
 | S5 | App Insights 复用现有实例（`APPLICATIONINSIGHTS_CONNECTION_STRING`） | 步骤 1（基础设施） | ✅ 已确认 |
@@ -788,7 +799,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | RAG Web App | `AIGovernTrustworthyRAGApp` |
 | Azure AI Search（fallback） | `aigoverntrustworthysearch` |
 | AI Search 索引（fallback） | `aigoverntrustworthydemo-rag-index` |
-| Storage Account | `aigoverntrustworthydemostorage` |
+| Storage Account | `aigoverntrustworthysa` |
 | Storage Container | `aigoverntrustworthydemo-rag-docs` |
 | Storage Container | `aigoverntrustworthydemo-finetune` |
 | Observability Payload Archive Storage Account | `aigoverntrustworthysa` |
@@ -814,10 +825,12 @@ L4_TARGET_REGISTRY_VERSION=1
 |---|---|---|---|
 | DD-001 | RAG 知识库优先覆盖 AI Governance 行业标准 PDF | 与 AIGovernApp 的 Governance 定位高度相关；先使用稳定标准文档，新闻和产品资料后置 | 2026-05 |
 | DD-002 | RAG 检索主路径使用代码切块 + 进程内轻量级检索 | 避免 Hosted Agent 区域限制与新增 embedding / vector 资源；Azure AI Search 仅保留 fallback | 2026-05 |
-| DD-003 | Fine-tune 使用 210 条 Q&A（200 正 + 10 故意错误） | 故意错误条目用于演示 Red Teaming 检测能力（模型可能"自信地答错"） | 2026-05 |
-| DD-004 | Fine-tune 数据来源限定 NIST AI RMF + NIST AI 600-1 | POC 阶段最小化数据范围；两份文档都已在仓库中有引用 | 2026-05 |
+| DD-003 | Fine-tune 使用 5000 条 AI 生成的 Q&A | 先用 native model 基于用户上传的 5 个 AI Governance PDF 生成结构化问答对，再将其整理为覆盖更全的可治理训练集 | 2026-05 |
+| DD-004 | Fine-tune 数据来源限定为用户上传的 5 个 AI Governance PDF；fine-tune base model 改为 `gpt-4.1-2025-04-14` | `gpt-5.4-nano` 已验证不暴露 fine-tune capability 字段；`gpt-4.1` 在当前 Foundry catalog 和 Portal 中可用于 fine-tune，且已被用户确认为步骤 4 训练基座。自动化创建 job 时必须使用 Foundry account endpoint `aigoverntrustworthyfoundry` 并传入 `trainingType=GlobalStandard` | 2026-05 |
 | DD-005 | VM 使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF）+ ollama | CPU-only，最小资源消耗；MIT 许可；ollama 单命令部署，OpenAI 兼容 API；模型质量足够演示 | 2026-05 |
 | DD-006 | RAG / Tier 1 / Tier 2 Web App 统一走 App Service；RAG 复用现有 `AIGovernDemoASP` | 减少资源数量，避免新建 Service Plan；符合当前用户要求 | 2026-05 |
 | DD-007 | 步骤 2 放弃 Hosted Agent；旧 Foundry Hub / Project 继续仅用于其他 Foundry 场景 | Hosted Agent 受区域限制；RAG Web App 不再依赖新后端 Foundry Project | 2026-05 |
 | DD-008 | App Insights 复用现有 | POC 阶段日志量小，无需隔离；减少资源数量 | 2026-05 |
 | DD-009 | 所有关键参数名写入 `.env.local.L4` | 支持后续脚本自动化；用户可手动修改参数名 | 2026-05 |
+| DD-010 | 步骤 4 执行路径固定为 AI 自动化；仅允许创建 fine-tune container、fine-tune job、fine-tuned deployment；中间 Q&A 同步归档到 `docs/finetune-qa-archive/` | 满足用户要求：自动化闭环、复用既有 storage、保留设计目录归档，并把允许创建的例外边界显式化 | 2026-05 |
+| DD-011 | Fine-tune base model 的最终可用性必须以 `fine_tuning.jobs.create` 实测为准，而不能只看 `list-models` capability 字段 | 2026-05-14 实测表明：catalog 暴露 fine-tune 能力字段并不等价于当前账号/区域/endpoint 上能成功创建 fine-tune job | 2026-05 |

@@ -35,11 +35,11 @@
 
 1. 在所有可以开启 APIM 的情况下，开启 APIM tracing。
 2. 对于 LLM 调用，使用 Python 代码级 log 记录完整证据。
-3. 对于 Foundry 内部调用链，全面开启 Foundry tracing。
+3. 对于 Foundry 内部调用链以及 SDK / 平台支持的路径，开启 Foundry tracing。
 4. 整体只做 demo 级 observability，不建设完整 troubleshooting 链条；目标是回答“什么时刻，谁调用了谁”。
-5. LLM 调用记录必须具备关联到 APIM tracing 和 Foundry tracing 的能力，但实现代价必须最小。
-6. Foundry tracing 与 APIM tracing 都以 Application Insights 为最终查询面，未来查询统一在 App Insights / Azure Monitor Logs 中完成。
-7. 所有自定义字段命名都尽可能向 Foundry tracing 与 APIM tracing 的原生命名靠拢。
+5. LLM 调用记录必须具备关联到 APIM tracing 和适用时的 Foundry tracing 的能力，但实现代价必须最小。
+6. Foundry tracing、APIM tracing 与 AOAI 平台诊断都以 Application Insights / Azure Monitor Logs 为统一查询面。
+7. 所有自定义字段命名都尽可能向 Foundry tracing、APIM tracing 和 AOAI 平台诊断的原生命名靠拢。
 
 ## 3. 需求记录
 
@@ -81,9 +81,10 @@ shared-observability 不再被设计为“统一 tracing 平台”或“自定�
 - APIM 是 demo 级调用链可见性的默认主路径。
 - 不要求 APIM 代理平台内部私有 hop，例如 Foundry managed agent 到其内部模型的调用。
 
-#### R-003 Foundry tracing 全面开启
+#### R-003 Foundry tracing 在适用路径上开启
 
-- 对 Foundry 原生模型、fine-tune 模型、Foundry Agent，必须开启 Foundry tracing。
+- 对 Foundry Agent、Hosted Agent，以及使用 Foundry SDK / 服务端 tracing 的模型调用，必须开启 Foundry tracing。
+- 对 APIM 直接代理 AOAI REST 的路径，不强制要求 Foundry Studio span；该路径的平台证据由 APIM diagnostics + AOAI 平台诊断提供。
 - 对支持服务端 tracing 的对象，优先使用平台原生 tracing，而不是重复自建 span 体系。
 
 #### R-004 Python 组件必须保存完整 AI 调用输入输出证据
@@ -185,7 +186,7 @@ shared-observability 不再被设计为“统一 tracing 平台”或“自定�
 当后续在 evaluation、red teaming 或人工查询中发现一条可疑 jailbreak 尝试时，系统必须能支持以下最小查询路径：
 
 1. 查到该次调用的 `trace_id` 或 `response_id`
-2. 通过 App Insights 查到它对应的 APIM hop 和 Foundry trace
+2. 通过 App Insights / Azure Monitor Logs 查到它对应的 APIM hop，以及适用时的 Foundry trace 或 AOAI 平台诊断
 3. 通过 `payload_ref` 打开 Blob 中的完整输入输出证据
 
 ## 4. 设计结论
@@ -232,6 +233,7 @@ App / Script / Runner (Python)
 Application Insights / Azure Monitor Logs
    |- APIM diagnostics and traces
    |- Foundry traces
+   |- AOAI platform diagnostics
    |- shared-observability evidence events
 
 Azure Blob Storage
@@ -246,6 +248,7 @@ Azure Blob Storage
 |---|---|---|
 | APIM tracing | 记录 HTTP hop、gateway latency、backend endpoint、入口来源 | 是 |
 | Foundry tracing | 记录 Foundry 内部 span、tool call、inputs/outputs、latency | 是 |
+| AOAI 平台诊断 | 记录 AOAI deployment、model identity、请求结果等平台侧证据 | 是 |
 | shared-observability | 保存完整 LLM 证据，并留下可 join 到 trace 的薄索引 | 是 |
 | Blob archive | 保存完整输入输出正文 | 否，作为证据存储 |
 
@@ -375,8 +378,9 @@ credential = ClientSecretCredential(
 
 #### 5.3.2 对 Foundry 的要求
 
-- Foundry tracing 必须连接到与本项目统一使用的 Application Insights。
-- 对 Foundry 原生模型、fine-tune 模型、Foundry Agent，必须开启 tracing。
+- Foundry tracing 必须连接到与本项目统一使用的 Application Insights / Azure Monitor Logs 查询面。
+- 对 Foundry Agent，以及使用 Foundry SDK / 服务端 tracing 的模型调用，必须开启 tracing。
+- 对 APIM 直接代理 AOAI REST 的模型调用，不单独要求 Foundry Studio span；该路径通过 APIM diagnostics + AOAI 平台诊断进入统一查询面。
 - Python 代码调用 Foundry 时，必须启用 SDK tracing / OpenTelemetry propagation，使 evidence event 与 Foundry spans 共享同一 `trace_id`。
 
 #### 5.3.3 对 Python 代码的要求
@@ -717,7 +721,7 @@ customEvents
 |---|---|
 | 所有可开 APIM 的地方开 APIM tracing | APIM 成为所有可代理 HTTP hop 的默认入口 |
 | LLM 调用使用 Python 代码级 log | `log_llm_call(...)` 负责保存完整证据 |
-| Foundry tracing 全面开启 | Foundry 原生模型 / fine-tune / Agent 全部要求启用 tracing |
+| Foundry tracing 在适用路径开启 | Foundry Agent 与 SDK / 服务端 tracing 路径启用；APIM 代理 AOAI REST 路径由 AOAI 平台诊断补位 |
 | demo 级即可 | 不构建完整 troubleshooting 平台 |
 | LLM 记录关联到 APIM / Foundry | evidence 事件共享 `trace_id` 并保存 `response_id` |
 | 统一查询都在 App Insights | APIM、Foundry、Python evidence 统一落 App Insights |
@@ -734,7 +738,7 @@ customEvents
 
 ## 12. 结论
 
-本设计将 Domain 4 的 observability 体系收敛为“APIM tracing + Foundry tracing + Python LLM evidence logging + Blob evidence archive”的四层组合。
+本设计将 Domain 4 的 observability 体系收敛为“APIM tracing + Foundry tracing / AOAI 平台诊断 + Python LLM evidence logging + Blob evidence archive”的四层组合。
 
 它满足当前 demo 所需的最小目标：
 
