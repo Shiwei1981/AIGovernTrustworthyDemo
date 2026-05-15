@@ -1,12 +1,12 @@
-# Domain 4 · VM Hugging Face 模型 + API · 步骤 5 需求设计
+# Domain 4 · VM Hugging Face 模型 + API · 步骤 5 设计文档
 
 ## 1. 文档定位
 
-本文件是 `design-L2-domain-4-prerequisites.md` 中**步骤 5：VM Hugging Face 模型 + API** 的专用 L3 设计文档，当前先记录该步骤的**具体需求、边界、复用关系、验收口径**，在需求确认后再继续补充实现设计和操作步骤。
+本文件是 `design-L2-domain-4-prerequisites.md` 中**步骤 5：VM Hugging Face 模型 + API** 的专用 L3 设计文档，记录该步骤的**需求、边界、实施设计、部署形态与验收口径**。
 
 步骤 5 在本项目中的定位，不是为了单独搭一台“能跑模型的 VM”，而是建立一个能够被 Domain 4 持续纳管的 **VM-hosted Hugging Face text model target**，为后续 APIM 接入、VM 侧 App Insights 观测、调用方 shared-observability、evaluation、red teaming 和 dashboard 指标提供基础对象。
 
-> **当前状态（2026-05-15）**：VM `AIGovernTrustworthyDemoPhi3VM` 已手动创建（Canada East，Standard B4s v2，Ubuntu 26.04 LTS Gen2）；运行时安装（llama.cpp server + Python sidecar）和模型下载尚未开始。低级别设计、APIM 预留路径、target registry 占位、`.env.local.L4` 变量合同均已完成。
+> **当前状态（2026-05-15）**：VM `AIGovernTrustworthyDemoPhi3VM` 已手动创建（Canada East，Standard B4s v2，Ubuntu 22.04.5 LTS jammy，Private IP `10.1.1.8`）；deploy SPN 已验证可通过 `az vm run-command` 登录和执行命令；运行时安装（llama.cpp server + Python sidecar）与模型下载尚未开始。低级别设计、APIM 预留路径、target registry、`.env.local.L4` 变量合同均已完成。
 
 **关联文档**：
 
@@ -98,7 +98,7 @@
 
 > **✅ 实际创建状态（2026-05-15）**
 > - 资源名：`AIGovernTrustworthyDemoPhi3VM`
-> - OS：Ubuntu 22.04.5 LTS (jammy)（Portal 显示 "Ubuntu Server 24.04"，实际 `lsb_release` 返回 22.04）
+> - OS：Ubuntu 22.04.5 LTS (jammy)（已通过 `az vm run-command + lsb_release` 验证）
 > - VM 规格：Standard B4s v2（4 vcpu，16 GiB）
 > - Private IP：`10.1.1.8`
 > - Public DNS：`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`
@@ -107,7 +107,7 @@
 1. 步骤 5 使用 **Azure VM** 作为运行载体，实际资源名为 `AIGovernTrustworthyDemoPhi3VM`。
 2. VM 操作系统为 **Ubuntu 22.04.5 LTS (jammy)**。
 3. VM 规格为 **Standard B4s v2**（4 vcpu，16 GiB），符合"成本优先 + 可稳定运行 `Phi-3-mini-4k-instruct`"原则。
-4. OS Disk 规格至少满足当前设计中的 **64GB**，用于容纳运行时、模型文件和日志。
+4. OS Disk 以“可容纳运行时、模型文件和日志并保留安全余量”为准；当前实际 **30 GB** 已足够承载本步骤，**64 GB** 仅作为更保守的建议值，不再视为硬性门槛。
 5. VM 已配置 **Public IP / DNS**。**NSG 必须严格限制 `11434/TCP` 入站仅允许受控来源**，不得向公网开放推理端口。
 6. VM 对外暴露的推理端口固定为 **`11434/TCP`**（Python sidecar 监听；`llama-server` 内部端口为 `11435`）。
 7. 与 VM 相关的最小环境合同变量：
@@ -294,7 +294,7 @@
 
 **约束**：
 1. sidecar 本身不持久化 `input` / `output` 正文；完整证据归档由步骤 6 调用方负责。
-2. sidecar 出错时不影响 llama-server 的正常响应；失败仅静默记录 App Insights 告警，不中断推理链路。
+2. sidecar 写 App Insights 遥测失败时不得阻断已成功的推理响应，但必须输出明确错误日志；若 sidecar 无法连接 llama-server，则应显式返回 5xx，不做 success-shaped fallback。
 3. 代码放置在 `apps/vm-model/` 目录，通过步骤 5 脚本部署到 VM。
 
 ---
@@ -352,3 +352,111 @@
 4. API 合同明确为**尽可能贴近通用 OpenAI-compatible LLM API**（`/v1/chat/completions`），不引入 VM 专属请求结构。
 5. VM 模型服务自身**不集成 shared-observability**；未来由模型调用方承担 shared-observability 与完整 evidence。
 6. VM 模型服务自身应**尽可能接入 App Insights**，承接 `trace_id` 并按现有字段语义记录轻量遥测。
+
+---
+
+## 10. 最终实施设计（已确认）
+
+以下内容为步骤 5 当前确认的**最终实施设计**，后续代码与脚本应按此设计落地。
+
+### 10.1 组件分工
+
+| 组件 | 位置 | 职责 | 不承担 |
+|---|---|---|---|
+| Hugging Face CLI | VM 本机 | 下载并固定 GGUF 模型文件 | 对外提供推理 API |
+| `llama-server` | VM 本机，`127.0.0.1:11435` / `0.0.0.0:11435` | 加载 GGUF、提供原生 OpenAI-compatible 推理接口、暴露 `/health` | trace 透传、App Insights 事件整理 |
+| Python FastAPI sidecar | VM 本机，`0.0.0.0:11434` | 对外统一入口、承接 `traceparent`、创建 OTel span、写 App Insights、代理到 `llama-server` | 完整 evidence 归档、Blob archive |
+| systemd | VM 本机 | 管理 `llama-server` 与 sidecar 开机自启、顺序启动、失败重启 | 业务逻辑 |
+| APIM `/vm-model` | 后续步骤 | 统一治理入口、移除 `Authorization`、注入治理 header | VM 内部模型加载与遥测实现 |
+
+### 10.2 运行拓扑与目录布局
+
+```
+APIM / 调用方
+    │
+    ▼
+http://10.1.1.8:11434
+    │
+    ▼
+Python FastAPI sidecar
+    │
+    ▼
+http://127.0.0.1:11435
+    │
+    ▼
+llama-server
+    │
+    ▼
+/opt/models/phi3/Phi-3-mini-4k-instruct-q4.gguf
+```
+
+建议目录布局如下：
+
+| 路径 | 用途 |
+|---|---|
+| `/opt/models/phi3/` | 存放 GGUF 模型文件 |
+| `/opt/vm-model/sidecar/` | sidecar 代码与 Python virtualenv |
+| `/opt/vm-model/bin/` | 本地下载的 `llama-server` 二进制或辅助脚本 |
+| `/etc/systemd/system/llama-server.service` | `llama-server` systemd unit |
+| `/etc/systemd/system/vm-model-sidecar.service` | sidecar systemd unit |
+| `/var/log/vm-model/` | sidecar / bootstrap 过程日志（如需要） |
+
+### 10.3 启动与依赖顺序
+
+1. 安装运行时依赖：`huggingface-hub`、Python venv、`uvicorn`、`fastapi`、OpenTelemetry / App Insights 依赖。
+2. 下载 `Phi-3-mini-4k-instruct-q4.gguf` 到 `/opt/models/phi3/`。
+3. 部署 `llama-server` 二进制到 `/opt/vm-model/bin/`，启动内部端口 `11435`。
+4. 部署 Python sidecar 到 `/opt/vm-model/sidecar/`，启动外部端口 `11434`。
+5. 由 systemd 管理两个进程；sidecar 启动前应等待 `llama-server /health` 就绪。
+6. 完成后先做 VM 本机 smoke test，再做内网直连 smoke test，最后再进入 APIM 后端绑定。
+
+### 10.4 Sidecar 请求处理设计
+
+**`GET /health`**
+1. sidecar 代理到 `http://127.0.0.1:11435/health`
+2. 原样返回 `llama-server` 响应
+
+**`POST /v1/chat/completions`**
+1. 读取上游 `traceparent`
+2. 创建 OTel span；无上游 trace 时自建新 trace
+3. 将请求体原样转发到 `llama-server`
+4. 从响应中提取 `id` 作为 `response_id`
+5. 写入 `AIGovernTrustworthyVMModelTrace` 事件到 App Insights
+6. 将 `llama-server` 的响应体、状态码、headers 原样返回给调用方
+
+**错误处理约束**
+1. `llama-server` 不可达：sidecar 返回明确的 5xx 错误
+2. App Insights 写入失败：请求仍可成功返回，但 sidecar 必须输出 error log
+3. 不允许返回“看起来成功但实际未调用模型”的伪成功响应
+
+### 10.5 systemd 设计
+
+步骤 5 最终以两个 unit 落地：
+
+| Unit | 启动命令 | 说明 |
+|---|---|---|
+| `llama-server.service` | `llama-server --model /opt/models/phi3/Phi-3-mini-4k-instruct-q4.gguf --alias Phi-3-mini-4k-instruct --host 0.0.0.0 --port 11435` | 仅负责模型推理 |
+| `vm-model-sidecar.service` | `uvicorn sidecar:app --host 0.0.0.0 --port 11434` | 对外统一入口与轻量遥测 |
+
+建议 sidecar unit 使用 `After=llama-server.service` 与 `Requires=llama-server.service`，确保启动顺序正确。
+
+### 10.6 与 `apps/vm-model/scripts/` 的映射
+
+| 脚本 | 最终职责 | 当前状态 |
+|---|---|---|
+| `01_create_vm.sh` | 仅保留为重建参考；当前 VM 已手动创建 | 参考脚本 |
+| `02_init_vm.sh` | 安装 Python 环境、HF CLI、`llama-server` 运行依赖 | 待开发 |
+| `03_download_model.sh` | 从 HF 下载 `Phi-3-mini-4k-instruct-q4.gguf` 到固定目录 | 待开发 |
+| `04_start_service.sh` | 写入并启用两个 systemd unit | 待开发 |
+| `05_smoke_test.sh` | 验证 `/health` 与 `/v1/chat/completions` | 待开发 |
+
+### 10.7 最小验证路径
+
+步骤 5 完成后，应至少按以下顺序验证：
+
+1. **VM 访问验证**：deploy SPN 可继续通过 `az vm run-command` 操作 VM
+2. **本机健康检查**：VM 内 `curl http://127.0.0.1:11435/health`
+3. **sidecar 健康检查**：VM 内 / 内网 `curl http://10.1.1.8:11434/health`
+4. **推理调用**：`POST /v1/chat/completions` 返回非空 `choices[0].message.content`
+5. **遥测验证**：App Insights 中可查到 `AIGovernTrustworthyVMModelTrace`
+6. **后续衔接**：APIM backend 可直接指向 `http://10.1.1.8:11434`

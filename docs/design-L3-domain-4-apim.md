@@ -119,7 +119,7 @@ APIM Product 用于将多个 API 组合打包，并控制访问策略（subscrip
 | `finetune-model` | `/finetune-model` | AOAI fine-tune deployment | `https://cognitiveservices.azure.com` | ⬜ 待配置（后端未就绪）|
 | `foundry-agent` | `/foundry-agent` | Foundry 自定义 Agent | `https://ml.azure.com` | ⬜ 待配置（Agent 未创建）|
 | `copilot-studio` | `/copilot-studio` | Direct Line（Copilot Studio） | DirectLine secret | ⬜ 待配置（Agent 未创建）|
-| `vm-model` | `/vm-model` | VM llama.cpp API（Phi-3-mini-4k-instruct） | 无（VNet 内访问）| ⬜ 待配置（VM 未创建）|
+| `vm-model` | `/vm-model` | VM llama.cpp API（Phi-3-mini-4k-instruct） | 无（VNet 内访问）| ⬜ 待配置（VM 已创建；运行时未部署）|
 | `tier1-app` | `/tier1` | Tier 1 Consumer App Service | `https://management.azure.com` | ⬜ 待配置（App 未部署）|
 | `tier2-app` | `/tier2` | Tier 2 Consumer App Service | `https://management.azure.com` | ⬜ 待配置（App 未部署）|
 
@@ -153,7 +153,7 @@ apiType:            http
 | `aoai-finetune-model` | `https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel` | MSI，scope=`https://cognitiveservices.azure.com` | ⬜ 待创建（deployment 未就绪）|
 | `foundry-custom-agent` | `https://eastus2.api.azureml.ms/agents/v1.0/subscriptions/47da4b42.../workspaces/aigovenaihubproject` | MSI，scope=`https://ml.azure.com` | ⬜ 待创建（Agent 未创建）|
 | `copilot-studio-directline` | `https://directline.botframework.com/v3/directline` | Named Value `copilot-directline-secret`（Header `Authorization: Bearer {secret}`）| ⬜ 待创建（Agent 未创建）|
-| `vm-llama-server` | `http://<L4_VM_PRIVATE_IP>:11434` | 无 | ⬜ 待创建（VM 未创建）|
+| `vm-llama-server` | `http://10.1.1.8:11434` | 无 | ⬜ 待创建（VM 已创建；service 未启动）|
 | `tier1-app-service` | `https://aigoverntrustworthydemotier1app.azurewebsites.net` | Entra（透传客户端 token）| ⬜ 待创建（App 未部署）|
 | `tier2-app-service` | `https://aigoverntrustworthydemotier2app.azurewebsites.net` | Entra（透传客户端 token）| ⬜ 待创建（App 未部署）|
 
@@ -444,13 +444,13 @@ serviceUrl:   https://directline.botframework.com/v3/directline
 
 ### 7.6 `vm-model` — VM Hugging Face 模型（Phi-3-mini-4k-instruct via llama.cpp server）⬜
 
-**状态**：待配置（VM 未创建）
+**状态**：待配置（VM 已创建；需在 `10.1.1.8:11434` 启动 sidecar 服务后再绑定 APIM backend）
 
 **前端**：
 ```
 displayName:  VM Hugging Face Model (Phi-3-mini-4k-instruct)
 path:         /vm-model
-serviceUrl:   http://<L4_VM_PRIVATE_IP>:11434
+serviceUrl:   http://10.1.1.8:11434
 ```
 
 **Operations**：
@@ -482,7 +482,7 @@ serviceUrl:   http://<L4_VM_PRIVATE_IP>:11434
 **网络前置条件**：
 - VM 所在子网与 APIM subnet-APIM 在同一 VNet，或 VNet 内可路由
 - NSG 允许 APIM subnet → VM subnet: 11434/TCP
-- `L4_VM_PRIVATE_IP` 已填入实际值
+- `L4_VM_PRIVATE_IP` 已确认：`10.1.1.8`
 
 ---
 
@@ -720,7 +720,7 @@ Named Values 用于存储跨 API 共享的配置值（含 Secrets）。
 | **API** | `finetune-model` | ⬜ 待配置（后端未就绪）|
 | **API** | `foundry-agent` | ⬜ 待配置（Agent 未创建）|
 | **API** | `copilot-studio` | ⬜ 待配置（Agent 未创建）|
-| **API** | `vm-model` | ⬜ 待配置（VM 未创建）|
+| **API** | `vm-model` | ⬜ 待配置（VM 已创建；待部署服务并绑定 backend）|
 | **API** | `tier1-app` | ⬜ 待配置（App 未部署）|
 | **API** | `tier2-app` | ⬜ 待配置（App 未部署）|
 | **产品** | Products 设计 | ⬜ 待创建（当前 `subscriptionRequired: false`）|
