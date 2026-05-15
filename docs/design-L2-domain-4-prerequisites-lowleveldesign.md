@@ -514,12 +514,12 @@ az storage container create \
 
 | 属性 | 值 |
 |---|---|
-| 资源名 | `AIGovernTrustworthyDemoVM` |
-| OS | Ubuntu 22.04 LTS |
-| VM Size | 优先最低成本、能稳定运行目标模型的 CPU-only SKU（`Standard_D4s_v3` 仅作保守 fallback） |
-| Public IP | 否（仅内网访问；由 runner / app 直连） |
+| 资源名 | `AIGovernTrustworthyDemoPhi3VM` |
+| OS | Ubuntu Server 26.04 LTS - Gen2 |
+| VM Size | Standard B4s v2（4 vcpu，16 GiB）— 成本优先原则，已确认可运行 |
+| Public IP | ✅ 已配置（DNS：`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`）；**NSG 必须限制 11434 端口仅允许受控来源入站** |
 | Network Security Group | 仅允许受控 VNet / 内网来源对 11434 端口的入站 |
-| OS Disk | 64GB（足够放 llama.cpp server + 模型） |
+| OS Disk | 64GB（足够放 llama.cpp server + 模型）|
 
 **选定模型**：[`microsoft/Phi-3-mini-4k-instruct`](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct)（GGUF Q4_K_M 量化）
 
@@ -567,15 +567,17 @@ curl http://localhost:11434/v1/chat/completions \
 
 **VM 创建命令**：
 
+> ✅ **已手动创建**：`AIGovernTrustworthyDemoPhi3VM`（Canada East，Standard B4s v2，Ubuntu 26.04 LTS Gen2）。
+> 以下命令仅供参考 / 重建使用。
+
 ```bash
 az vm create \
-  --name AIGovernTrustworthyDemoVM \
+  --name AIGovernTrustworthyDemoPhi3VM \
   --resource-group AIGovernTrustworthyRG \
-  --image Ubuntu2204 \
-  --size Standard_D4s_v3 \
+  --image Ubuntu2404 \
+  --size Standard_B4s_v2 \
   --admin-username azureuser \
   --generate-ssh-keys \
-  --public-ip-address "" \
   --nsg AIGovernTrustworthyDemoVMNSG \
   --tags AI=AIGovernTrustworthyDemo-HuggingFaceVM Owner=weishi@MngEnvMCAP029189.onmicrosoft.com
 # 记录 Private IP → L4_VM_PRIVATE_IP
@@ -700,8 +702,9 @@ L4_TIER2_APP_NAME=AIGovernTrustworthyDemoTier2App
 L4_TIER2_APP_URL=<to-be-deployed>               # https://AIGovernTrustworthyDemoTier2App.azurewebsites.net
 
 # ── VM（Hugging Face 模型）────────────────────────────────────────────────
-L4_VM_NAME=AIGovernTrustworthyDemoVM
-L4_VM_PRIVATE_IP=<to-be-created>
+L4_VM_NAME=AIGovernTrustworthyDemoPhi3VM
+L4_VM_PRIVATE_IP=<to-be-filled>
+L4_VM_PUBLIC_DNS=aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com
 L4_VM_MODEL_API_PORT=11434
 
 # ── Copilot Studio Agent ──────────────────────────────────────────────────
@@ -751,8 +754,8 @@ L4_TARGET_REGISTRY_VERSION=1
 | A8 | Storage Account（复用） | `aigoverntrustworthysa` | `AIGovernTrustworthyRG` | 复用现有 Storage Account | `AIGovernTrustworthyDemo-Storage` | `L4_STORAGE_CONNECTION_STRING` |
 | A9 | Storage Container | `aigoverntrustworthydemo-rag-docs` | — | `az storage container create` | N/A | — |
 | A10 | Storage Container | `aigoverntrustworthydemo-finetune` | — | `az storage container create` | N/A | — |
-| A11 | Azure VM | `AIGovernTrustworthyDemoVM` | `AIGovernTrustworthyRG` | `az vm create` | `AIGovernTrustworthyDemo-HuggingFaceVM` | `L4_VM_PRIVATE_IP` |
-| A12 | Network Security Group | `AIGovernTrustworthyDemoVMNSG` | `AIGovernTrustworthyRG` | `az network nsg create` | `AIGovernTrustworthyDemo-HuggingFaceVM` | — |
+| A11 | Azure VM | `AIGovernTrustworthyDemoPhi3VM` | `AIGovernTrustworthyRG` | 已手动创建 | `AIGovernTrustworthyDemo-HuggingFaceVM` | `L4_VM_PRIVATE_IP` |
+| A12 | Network Security Group | `AIGovernTrustworthyDemoVMNSG` | `AIGovernTrustworthyRG` | 随 VM 自动创建 | `AIGovernTrustworthyDemo-HuggingFaceVM` | — |
 | A13 | Azure OpenAI 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModel` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT` |
 | A14 | Azure OpenAI Fine-tune Deployment | `AIGovernTrustworthyDemoFineTuneModel` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_FINETUNE_MODEL_DEPLOYMENT` |
 | A15 | Azure AI Foundry Agent | `AIGovernTrustworthyDemoFoundryAgent` | `AIGovernDemoRG / aigovenaihubproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_AGENT_ID` |
@@ -827,7 +830,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | App Service Plan（复用） | `AIGovernDemoASP` |
 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` |
 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` |
-| Azure VM | `AIGovernTrustworthyDemoVM` |
+| Azure VM | `AIGovernTrustworthyDemoPhi3VM` |
 | Network Security Group | `AIGovernTrustworthyDemoVMNSG` |
 | Azure AI Foundry 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModel` |
 | Azure AI Foundry Fine-tune Deployment | `AIGovernTrustworthyDemoFineTuneModel` |

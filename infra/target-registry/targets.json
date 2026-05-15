@@ -72,19 +72,23 @@
       "notes": "Step 8. Copilot Studio Agent not yet created."
     },
     {
-      "target_id": "AIGovernTrustworthyDemoVM",
+      "target_id": "AIGovernTrustworthyDemoPhi3VM",
       "target_type": "vm_huggingface_model",
-      "display_name": "VM Hugging Face Model (phi3:mini)",
-      "model_name": "phi3:mini",
+      "display_name": "VM Hugging Face Model (Phi-3-mini-4k-instruct)",
+      "model_name": "Phi-3-mini-4k-instruct",
       "model_version": "<to-be-confirmed>",
-      "vm_name": "AIGovernTrustworthyDemoVM",
-      "vm_private_ip": "<to-be-created>",
+      "vm_name": "AIGovernTrustworthyDemoPhi3VM",
+      "vm_os": "Ubuntu Server 26.04 LTS Gen2",
+      "vm_size": "Standard_B4s_v2",
+      "vm_region": "canadaeast",
+      "vm_private_ip": "<to-be-filled>",
+      "vm_public_dns": "aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com",
       "api_port": 11434,
-      "endpoint": "<to-be-created>",
+      "endpoint": "http://<to-be-filled>:11434",
       "apim_path": "<to-be-configured>",
       "auth": "none",
-      "status": "pending",
-      "notes": "Step 5. VM not yet provisioned."
+      "status": "provisioned",
+      "notes": "Step 5. VM provisioned manually. OS: Ubuntu 26.04 LTS Gen2. Size: Standard B4s v2 (4 vcpu, 16 GiB). Public DNS assigned — NSG must restrict port 11434 to VNet/controlled sources only. Private IP to be filled after confirmed. llama.cpp server + Python sidecar not yet installed."
     },
     {
       "target_id": "AIGovernTrustworthyDemoTier1App",

@@ -63,17 +63,17 @@
 | `docs/design-L2-domain-4-prerequisites-lowleveldesign.md` | 已选定 VM 规格、模型、运行方式与变量名 | 步骤 5 默认不重新选型 |
 | `docs/design-L3-domain-4-apim.md` §7.6 | 已为 `/vm-model` 预留 API 路径 | 步骤 5 的 API 形态必须能被该路径代理 |
 | `.env.local.L4` | 已存在 `L4_VM_*` 变量合同 | 步骤 5 的实现和脚本必须沿用这些名字 |
-| `infra/target-registry/targets.json` | 已存在 `AIGovernTrustworthyDemoVM` 占位 | 步骤 5 的治理身份已初步固定 |
+| `infra/target-registry/targets.json` | `AIGovernTrustworthyDemoPhi3VM` 条目已更新 | 步骤 5 的治理身份已固定 |
 
 **当前已存在的 draft 决策**：
 
-| 项目 | 当前 draft |
+| 项目 | 当前 draft → 实际值 |
 |---|---|
-| VM 名称 | `AIGovernTrustworthyDemoVM` |
-| OS | Ubuntu 22.04 LTS |
-| VM 规格 | 优先最低成本、能稳定运行目标模型的 CPU-only SKU（`Standard_D4s_v3` 仅保留为保守 fallback） |
-| 网络 | 无 Public IP；仅内网访问 |
-| 推理端口 | `11434` |
+| VM 名称 | `AIGovernTrustworthyDemoPhi3VM` ✅ 已创建 |
+| OS | Ubuntu Server 26.04 LTS - Gen2 ✅ 已创建 |
+| VM 规格 | Standard B4s v2（4 vcpu，16 GiB）✅ 已创建 |
+| 网络 | Public IP 已配置，DNS：`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`；**NSG 必须限制 11434 端口** |
+| 推理端口 | `11434`（sidecar 外部）/ `11435`（llama-server 内部）|
 | 模型 HF 仓库 | `microsoft/Phi-3-mini-4k-instruct-gguf` |
 | 模型 GGUF 文件 | `Phi-3-mini-4k-instruct-q4.gguf`（Q4_K_M 量化，~2.2 GB） |
 | 模型逻辑别名 | `Phi-3-mini-4k-instruct`（llama-server `--alias`） |
@@ -96,20 +96,26 @@
 
 ### 5.2 VM 资源与操作系统需求
 
-1. 步骤 5 必须使用 **Azure VM** 作为运行载体，目标资源名固定为 `AIGovernTrustworthyDemoVM`。
-2. VM 操作系统固定为 **Ubuntu 22.04 LTS**。
-3. VM 规格不再固定死为 `Standard_D4s_v3`。本步骤的要求是：优先选择当前区域中**能稳定运行 `Phi-3-mini-4k-instruct` GGUF Q4_K_M 且成本最低**的 CPU-only SKU；`Standard_D4s_v3` 仅作为保守 fallback。
+> **✅ 实际创建状态（2026-05-15）**
+> - 资源名：`AIGovernTrustworthyDemoPhi3VM`
+> - OS：Ubuntu Server 26.04 LTS - Gen2
+> - VM 规格：Standard B4s v2（4 vcpu，16 GiB）
+> - Public DNS：`aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com`
+> - Private IP：待填入 `L4_VM_PRIVATE_IP`
+
+1. 步骤 5 使用 **Azure VM** 作为运行载体，实际资源名为 `AIGovernTrustworthyDemoPhi3VM`。
+2. VM 操作系统为 **Ubuntu Server 26.04 LTS - Gen2**。
+3. VM 规格为 **Standard B4s v2**（4 vcpu，16 GiB），符合"成本优先 + 可稳定运行 `Phi-3-mini-4k-instruct`"原则。
 4. OS Disk 规格至少满足当前设计中的 **64GB**，用于容纳运行时、模型文件和日志。
-5. VM 默认**不配置 Public IP**，只允许内网 / 受控 VNet 来源访问。
-6. VM 对外暴露的推理端口固定为 **`11434/TCP`**。
-7. 与 VM 相关的最小环境合同沿用 `.env.local.L4` 现有变量：
+5. VM 已配置 **Public IP / DNS**。**NSG 必须严格限制 `11434/TCP` 入站仅允许受控来源**，不得向公网开放推理端口。
+6. VM 对外暴露的推理端口固定为 **`11434/TCP`**（Python sidecar 监听；`llama-server` 内部端口为 `11435`）。
+7. 与 VM 相关的最小环境合同变量：
    - `L4_VM_NAME`
    - `L4_VM_ADMIN_USERNAME`
    - `L4_VM_PRIVATE_IP`
+   - `L4_VM_PUBLIC_DNS`
    - `L4_VM_MODEL_NAME`
    - `L4_VM_MODEL_API_PORT`
-8. 若实施中发现最低成本 SKU 无法支撑最小演示负载，可以按“最小幅度上调规格”的原则逐级提高；但应先保留成本优先原则，并记录为什么低成本 SKU 不满足最小 smoke test。
-
 ### 5.3 模型选择与运行时需求
 
 1. 步骤 5 必须选择**文本类** Hugging Face 模型，不引入图像、语音、视频或多模态模型。
@@ -175,9 +181,9 @@
 | 字段 | 要求值 / 要求 |
 |---|---|
 | `target_type` | `vm_huggingface_model` |
-| `target_id` | `AIGovernTrustworthyDemoVM` |
+| `target_id` | `AIGovernTrustworthyDemoPhi3VM` |
 | `display_name` | `VM Hugging Face Model (Phi-3-mini-4k-instruct)` |
-| `vm_name` | `AIGovernTrustworthyDemoVM` |
+| `vm_name` | `AIGovernTrustworthyDemoPhi3VM` |
 | `model_name` | `Phi-3-mini-4k-instruct` |
 | `model_version` | 待在实际模型拉取完成后确认，不得长期保留 placeholder |
 | `api_port` | `11434` |
