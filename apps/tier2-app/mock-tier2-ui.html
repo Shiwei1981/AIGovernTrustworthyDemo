@@ -1244,10 +1244,29 @@
       }
       // Combine prefix + tier1 chain into one flat flow
       const allNodes = [...prefixNodes, ...nodes];
-      const flowHtml = allNodes.map((node, i) => {
-        const arrow = i < allNodes.length - 1 ? '<div class="tarrow">→</div>' : '';
-        return `${renderNode(node)}${arrow}`;
-      }).join('');
+
+      function writerNodeIndex(archive) {
+        if (archive.source_type === 'tier2_consumer') {
+          return allNodes.findIndex(node => node.label === 'Tier 2 App');
+        }
+        if (archive.source_type === 'tier1_consumer') {
+          return allNodes.findIndex(node => node.sub === 'tier1_consumer');
+        }
+        if (archive.source_type === 'rag_service') {
+          return allNodes.findIndex(node => node.sub === 'rag_service');
+        }
+        const serviceLabel = (archive.service_name || '').replace('AIGovernTrustworthyDemo.', '');
+        return allNodes.findIndex(node => node.label === serviceLabel);
+      }
+
+      const gridTemplate = allNodes.map(() => 'minmax(128px, 180px)').join(' 24px ');
+      const gridCells = [];
+      allNodes.forEach((node, i) => {
+        gridCells.push(`<div style="grid-row:1;grid-column:${i * 2 + 1};">${renderNode(node)}</div>`);
+        if (i < allNodes.length - 1) {
+          gridCells.push(`<div class="tarrow" style="grid-row:1;grid-column:${i * 2 + 2};">→</div>`);
+        }
+      });
 
       function writerLabel(archive) {
         if (archive.source_type === 'tier2_consumer') return 'Tier 2 App';
@@ -1265,15 +1284,17 @@
         });
       }
 
-      const archiveFlowHtml = displayArchives.map(archive => `
-        <div style="display:flex;align-items:flex-start;gap:8px;">
-          <div style="font-size:11px;color:#8a9bb8;padding-top:18px;white-space:nowrap;flex-shrink:0;">🖥️ ${escapeHtml(writerLabel(archive))} writes ↓</div>
-          <div style="display:flex;flex-direction:column;align-items:center;min-width:128px;max-width:180px;">
-            <div style="color:#c8952a;font-size:16px;padding:3px 0;line-height:1;">↓</div>
+      displayArchives.forEach(archive => {
+        const nodeIndex = writerNodeIndex(archive);
+        if (nodeIndex < 0) return;
+        gridCells.push(`
+          <div style="grid-row:2;grid-column:${nodeIndex * 2 + 1};display:flex;flex-direction:column;align-items:center;gap:4px;">
+            <div style="font-size:11px;color:#8a9bb8;white-space:nowrap;text-align:center;">${escapeHtml(writerLabel(archive))} writes</div>
+            <div style="color:#c8952a;font-size:16px;line-height:1;">↓</div>
             ${renderArchiveNode(archive)}
           </div>
-        </div>
-      `).join('');
+        `);
+      });
 
       function fmtPayload(obj) {
         if (!obj) return '<em style="color:#8a9bb8">No data</em>';
@@ -1309,9 +1330,10 @@
             ${occurredAt ? `<span>·</span><span>${escapeHtml(occurredAt)} UTC</span>` : ''}
           </div>
         </div>
-        <div class="tflow" style="padding-bottom:4px;">${flowHtml}</div>
-        <div style="display:flex;flex-wrap:wrap;align-items:flex-start;padding:4px 18px 16px;gap:16px;border-top:1px solid rgba(62,92,138,0.07);">
-          ${archiveFlowHtml}
+        <div style="padding:16px 18px 16px;overflow-x:auto;border-top:1px solid rgba(62,92,138,0.07);">
+          <div style="display:grid;grid-template-columns:${gridTemplate};row-gap:12px;column-gap:0;align-items:start;min-width:max-content;">
+            ${gridCells.join('')}
+          </div>
         </div>
         <div class="tpanel-payloads">
           ${payloadsHtml}
