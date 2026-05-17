@@ -754,11 +754,12 @@
         <div class="diag-grid">
           <div class="diag-card">
             <h3>Current Route</h3>
-            <ul id="routeList"></ul>
+            <table id="routeList" style="width:100%; border-collapse:collapse; font-size:12px;"></table>
           </div>
           <div class="diag-card">
             <h3>Latest Governance Headers</h3>
-            <ul id="headerList"></ul>
+            <table id="headerList" style="width:100%; border-collapse:collapse; font-size:12px;"></table>
+            <div id="traceChainBtn" style="margin-top:10px;"></div>
           </div>
         </div>
       </aside>
@@ -922,20 +923,30 @@
         <div class="tflow">${ccFlow}</div>
       `;
 
-      document.getElementById('routeList').innerHTML = `
-        <li><span>Target</span> <strong>${escapeHtml(tab?.target_id || '')}</strong></li>
-        <li><span>Type</span> ${escapeHtml(tab?.target_type || '')}</li>
-        <li><span>Status</span> ${escapeHtml(tab?.status || '')}</li>
-        <li><span>Downstream</span> <span class="mono">${escapeHtml(tab?.downstream_path || '')}</span></li>
-        <li><span>Forward API</span> <span class="mono">${escapeHtml(tab?.api_path || '')}</span></li>
-      `;
-      document.getElementById('headerList').innerHTML = `
-        <li><span>Request</span> <span class="mono">${escapeHtml(headers['x-governance-request-id'] || '—')}</span></li>
-        <li><span>Trace</span> <span class="mono">${escapeHtml(headers['x-governance-trace-id'] || '—')}</span>${headers['x-governance-trace-id'] ? ` <button class="trace-btn" onclick="loadTrace('${escapeHtml(headers['x-governance-trace-id'])}')">🔍 Trace Chain</button>` : ''}</li>
-        <li><span>Archive</span> <span class="mono">${escapeHtml(headers['x-governance-archive-id'] || '—')}</span></li>
-        <li><span>Response</span> <span class="mono">${escapeHtml(headers['x-governance-response-id'] || '—')}</span></li>
-        <li><span>Service</span> <span class="mono">${escapeHtml(headers['x-governance-service-name'] || '—')}</span></li>
-      `;
+      function tr(label, value) {
+        return `<tr>
+          <td style="color:var(--muted);white-space:nowrap;padding:3px 8px 3px 0;vertical-align:top;font-size:11px;width:72px">${escapeHtml(label)}</td>
+          <td style="padding:3px 0;vertical-align:top;word-break:break-all;font-family:'IBM Plex Mono',Consolas,monospace;font-size:11px;color:#284266;">${escapeHtml(value)}</td>
+        </tr>`;
+      }
+      document.getElementById('routeList').innerHTML =
+        tr('Target', tab?.target_id || '') +
+        tr('Type',   tab?.target_type || '') +
+        tr('Status', tab?.status || '') +
+        tr('Downstream', tab?.downstream_path || '') +
+        tr('Forward API', tab?.api_path || '');
+
+      const traceId = headers['x-governance-trace-id'] || '';
+      document.getElementById('headerList').innerHTML =
+        tr('Request', headers['x-governance-request-id'] || '—') +
+        tr('Trace',   traceId || '—') +
+        tr('Archive', headers['x-governance-archive-id'] || '—') +
+        tr('Response',headers['x-governance-response-id'] || '—') +
+        tr('Service', headers['x-governance-service-name'] || '—');
+
+      document.getElementById('traceChainBtn').innerHTML = traceId
+        ? `<button class="trace-btn" style="width:100%;justify-content:center;" onclick="loadTrace('${escapeHtml(traceId)}')">🔍 Trace Chain</button>`
+        : '';
     }
 
     function renderError() {
