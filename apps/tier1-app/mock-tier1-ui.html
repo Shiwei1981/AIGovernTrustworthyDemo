@@ -905,6 +905,13 @@
           <div class="tnode-sub">${escapeHtml(sub)}</div>
         </div>`;
       }
+      // For RAG tab, add Foundry LLM node after the backend (RAG Service calls Foundry directly)
+      const isRag = state.active === 'rag';
+      const ragLlmNode = isRag
+        ? ccNode('sidecar', '🧠', 'Foundry LLM', 'gpt-5.4-mini · direct')
+        : '';
+      const ragLlmArrow = isRag ? '<div class="tarrow">→</div>' : '';
+
       const ccFlow = [
         ccNode('tier1', '👤', user, authMode),
         '<div class="tarrow">→</div>',
@@ -913,6 +920,8 @@
         ccNode('apim', '🔀', 'APIM', downPath),
         '<div class="tarrow">→</div>',
         ccNode('backend', targetTypeIcon(targetType), targetName, targetType),
+        ragLlmArrow,
+        ragLlmNode,
       ].join('');
 
       document.getElementById('callChainPanel').innerHTML = `
@@ -1146,16 +1155,20 @@
         });
       }
 
-      // Node 4 — VM Sidecar (non-APIM, non-observability, non-evidence deps)
+      // Node 4 — RAG→Foundry LLM direct call, or VM Sidecar (non-APIM, non-observability, non-evidence deps)
       const sidecarDeps = dependencies.filter(d =>
         d.role && !d.role.includes('APIM') && !d.role.includes('shared_observability') &&
         d.name !== 'AIGovernEvidenceCapture');
       if (sidecarDeps.length) {
         const first = sidecarDeps[0];
+        const isRagLlm = (evidence['aigov.target.type'] || '') === 'rag_service';
+        const model = evidence['gen_ai.request.model'] || '';
         chain.push({
-          type: 'sidecar', icon: '⚡',
-          label: first.role.replace('AIGovernTrustworthyDemo.', ''),
-          sub: first.name, duration: Math.round(first.duration_ms),
+          type: 'sidecar',
+          icon: isRagLlm ? '🧠' : '⚡',
+          label: isRagLlm ? 'Foundry LLM' : first.role.replace('AIGovernTrustworthyDemo.', ''),
+          sub: isRagLlm ? (model || 'gpt-5.4-mini') + ' · direct' : first.name,
+          duration: Math.round(first.duration_ms),
           durationLabel: 'inference',
           status: first.success ? 'ok' : 'err',
         });
