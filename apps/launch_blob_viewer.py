@@ -171,6 +171,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
     _creds: tuple = ()  # (tenant_id, client_id, client_secret)
     _lock = __import__("threading").Lock()
 
+    def _send_no_cache_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+
     @classmethod
     def _get_fresh_token(cls) -> str:
         """Return a valid token, refreshing if within 5 minutes of expiry."""
@@ -185,6 +190,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path in ("/", "/blob-viewer.html"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self._send_no_cache_headers()
             self.send_header("Content-Length", str(len(self.injected_html)))
             self.end_headers()
             self.wfile.write(self.injected_html)
@@ -200,6 +206,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self._send_no_cache_headers()
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -207,6 +214,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 payload = json.dumps({"error": str(exc)}).encode("utf-8")
                 self.send_response(502)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self._send_no_cache_headers()
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -221,6 +229,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 payload = _blob_get(self._get_fresh_token(), blob_path)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self._send_no_cache_headers()
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -228,6 +237,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 payload = json.dumps({"error": str(exc)}).encode("utf-8")
                 self.send_response(502)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self._send_no_cache_headers()
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)

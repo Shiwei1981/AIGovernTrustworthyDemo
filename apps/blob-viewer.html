@@ -117,6 +117,9 @@
       <option value="">全部 service_name</option>
     </select>
     <select id="filter-time" onchange="filterRecords()">
+      <option value="15m" selected>15 分钟以内</option>
+      <option value="1h">1 小时以内</option>
+      <option value="12h">12 小时以内</option>
       <option value="24h">24 小时以内</option>
       <option value="48h">48 小时以内</option>
       <option value="7d">7 日以内</option>
@@ -284,9 +287,12 @@ function matchesTimeFilter(occurredAt, timeFilter, nowMs) {
   if (Number.isNaN(ts) || ts > nowMs) return false;
 
   const windows = {
+    '15m': 15 * 60 * 1000,
+    '1h':   1 * 60 * 60 * 1000,
+    '12h': 12 * 60 * 60 * 1000,
     '24h': 24 * 60 * 60 * 1000,
     '48h': 48 * 60 * 60 * 1000,
-    '7d': 7 * 24 * 60 * 60 * 1000,
+    '7d':   7 * 24 * 60 * 60 * 1000,
   };
   const maxAge = windows[timeFilter];
   if (!maxAge) return true;
