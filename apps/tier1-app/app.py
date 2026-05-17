@@ -548,8 +548,7 @@ def api_trace(trace_id: str) -> JSONResponse:
     except Exception as exc:
         log.warning("App Insights trace query failed: %s", exc)
 
-    evidence: dict = {}
-    archive_prefix = ""
+    evidence_rows: list[dict[str, Any]] = []
     requests_list: list = []
     deps_list: list = []
 
@@ -560,10 +559,14 @@ def api_trace(trace_id: str) -> JSONResponse:
         if item_type == "trace" and message == "AIGovernTrustworthyLLMEvidence":
             try:
                 dims = json.loads(custom_dims) if isinstance(custom_dims, str) else (custom_dims or {})
-                evidence = dims
                 ref = dims.get("aigov.payload.ref", "")
-                if ref:
-                    archive_prefix = ref.rstrip("/")
+                evidence_entry = {"timestamp": ts}
+                evidence_entry.update(dims)
+                evidence_rows.append({
+                    "timestamp": ts,
+                    "evidence": evidence_entry,
+                    "archive_prefix": ref.rstrip("/") if ref else "",
+                })
             except Exception:
                 pass
         elif item_type == "request":
@@ -581,11 +584,31 @@ def api_trace(trace_id: str) -> JSONResponse:
                 "duration_ms": round(float(duration or 0), 1),
             })
 
-    blob_metadata: dict = {}
-    blob_input = None
-    blob_output = None
+    evidence = (
+        next(
+            (entry["evidence"] for entry in evidence_rows if entry["evidence"].get("aigov.source.type") == "tier1_consumer"),
+            None,
+        )
+        or (evidence_rows[0]["evidence"] if evidence_rows else {})
+    )
+    primary_archive_prefix = (
+        next(
+            (entry["archive_prefix"] for entry in evidence_rows if entry["evidence"].get("aigov.source.type") == "tier1_consumer"),
+            "",
+        )
+        or (evidence_rows[0]["archive_prefix"] if evidence_rows else "")
+    )
 
-    if archive_prefix:
+    def _load_blob_archive(archive_prefix: str) -> dict[str, Any]:
+        blob_metadata: dict = {}
+        blob_input = None
+        blob_output = None
+        if not archive_prefix:
+            return {
+                "blob_metadata": blob_metadata,
+                "blob_input": blob_input,
+                "blob_output": blob_output,
+            }
         for suffix, slot in [("metadata.json", "meta"), ("input.json", "inp"), ("output.json", "out")]:
             path = f"{archive_prefix}/{suffix}"
             try:
@@ -600,13 +623,35 @@ def api_trace(trace_id: str) -> JSONResponse:
                     blob_output = content
             except Exception:
                 pass
+        return {
+            "blob_metadata": blob_metadata,
+            "blob_input": blob_input,
+            "blob_output": blob_output,
+        }
+
+    primary_blob = _load_blob_archive(primary_archive_prefix)
+    blob_archives = []
+    for entry in evidence_rows:
+        archive = _load_blob_archive(entry["archive_prefix"])
+        blob_archives.append({
+            "timestamp": entry["timestamp"],
+            "service_name": entry["evidence"].get("service.name", ""),
+            "source_type": entry["evidence"].get("aigov.source.type", ""),
+            "target_type": entry["evidence"].get("aigov.target.type", ""),
+            "target_id": entry["evidence"].get("aigov.target.id", ""),
+            "archive_id": entry["evidence"].get("aigov.archive.id", ""),
+            "payload_ref": entry["evidence"].get("aigov.payload.ref", ""),
+            **archive,
+        })
 
     return JSONResponse({
         "trace_id": safe_id,
         "evidence": evidence,
-        "blob_metadata": blob_metadata,
-        "blob_input": blob_input,
-        "blob_output": blob_output,
+        "evidences": [entry["evidence"] for entry in evidence_rows],
+        "blob_metadata": primary_blob["blob_metadata"],
+        "blob_input": primary_blob["blob_input"],
+        "blob_output": primary_blob["blob_output"],
+        "blob_archives": blob_archives,
         "requests": requests_list,
         "dependencies": deps_list,
     })
