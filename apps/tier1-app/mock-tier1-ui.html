@@ -1184,8 +1184,6 @@
       const flowHtml = chain.map((node, i) => {
         const dBadge = node.duration != null
           ? `<span class="tnode-badge">${node.durationLabel || 'latency'}: ${node.duration}ms</span>` : '';
-        const cBadge = node.count > 1
-          ? `<span class="tnode-count">×${node.count}</span>` : '';
         const sBadge = `<span class="tnode-status tnode-${node.status}">${node.status === 'ok' ? '✓' : node.status === 'err' ? '✗' : '·'}</span>`;
         const arrow = i < chain.length - 1 ? '<div class="tarrow">→</div>' : '';
         return `
@@ -1193,7 +1191,7 @@
             <div class="tnode-icon">${node.icon}</div>
             <div class="tnode-label">${escapeHtml(node.label)}</div>
             <div class="tnode-sub">${escapeHtml(node.sub || '')}</div>
-            <div class="tnode-badges">${dBadge}${cBadge}${sBadge}</div>
+            <div class="tnode-badges">${dBadge}${sBadge}</div>
           </div>${arrow}`;
       }).join('');
 
