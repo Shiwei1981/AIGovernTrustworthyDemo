@@ -1263,8 +1263,8 @@
         const nodeIndex = writerNodeIndex(archive);
         if (nodeIndex < 0) return;
         gridCells.push(`
-          <div style="grid-row:2;grid-column:${nodeIndex * 2 + 1};display:flex;flex-direction:column;align-items:center;gap:4px;">
-            <div style="font-size:11px;color:#8a9bb8;white-space:nowrap;text-align:center;">${escapeHtml(writerLabel(archive))} writes</div>
+          <div style="grid-row:2;grid-column:${nodeIndex * 2 + 1};width:100%;display:flex;flex-direction:column;align-items:center;gap:4px;">
+            <div style="font-size:11px;color:#8a9bb8;text-align:center;word-break:break-word;">${escapeHtml(writerLabel(archive))} writes</div>
             <div style="color:#c8952a;font-size:16px;line-height:1;">↓</div>
             ${renderArchiveNode(archive)}
           </div>
