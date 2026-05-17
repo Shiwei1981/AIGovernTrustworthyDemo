@@ -904,12 +904,19 @@
           <div class="tnode-sub">${escapeHtml(sub)}</div>
         </div>`;
       }
-      // For RAG tab, add Foundry LLM node after the backend (RAG Service calls Foundry directly)
+      // For RAG tab, add Foundry LLM node (RAG Service calls Foundry directly via OpenAI SDK)
       const isRag = state.active === 'rag';
       const ragLlmNode = isRag
         ? ccNode('sidecar', '🧠', 'Foundry LLM', 'gpt-5.4-mini · direct')
         : '';
       const ragLlmArrow = isRag ? '<div class="tarrow">→</div>' : '';
+
+      // For Foundry Agent tab, add internal model deployment node (Azure-managed, not in App Insights)
+      const isAgent = state.active === 'foundry-agent';
+      const agentLlmNode = isAgent
+        ? ccNode('sidecar', '🧠', 'Foundry LLM', 'gpt-5.4-mini · internal')
+        : '';
+      const agentLlmArrow = isAgent ? '<div class="tarrow">→</div>' : '';
 
       const ccFlow = [
         ccNode('tier1', '👤', user, authMode),
@@ -919,8 +926,8 @@
         ccNode('backend', '🖥️', 'Tier 1 App', tier1Url),
         '<div class="tarrow">→</div>',
         ccNode('backend', targetTypeIcon(targetType), targetName, targetType),
-        ragLlmArrow,
-        ragLlmNode,
+        ragLlmArrow, ragLlmNode,
+        agentLlmArrow, agentLlmNode,
       ].join('');
 
       document.getElementById('callChainPanel').innerHTML = `
