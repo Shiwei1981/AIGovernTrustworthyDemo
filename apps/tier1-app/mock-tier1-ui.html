@@ -1181,11 +1181,7 @@
         });
       }
 
-      // Blob Archive — written by Tier1 governance sidecar; rendered as branch from Tier1 node
-      const archiveId = evidence['aigov.archive.id'] || '';
-      const blobNode = { type: 'blob', icon: '💾', label: 'Blob Archive',
-                         sub: archiveId ? archiveId.slice(0, 8) + '…' : 'saved', status: 'ok' };
-      return { nodes: chain, blobNode };
+      return { nodes: chain };
     }
 
     function renderTraceHtml(data) {
@@ -1194,12 +1190,29 @@
         return '<div class="tpanel-empty">⚠️ No record found for this Trace ID in App Insights (may still be flushing — retry in a moment).</div>';
       }
 
-      const { nodes, blobNode } = buildChain(data);
+      const fallbackArchive = {
+        service_name: evidence['service.name'] || '',
+        source_type: evidence['aigov.source.type'] || '',
+        target_type: evidence['aigov.target.type'] || '',
+        archive_id: evidence['aigov.archive.id'] || '',
+        blob_metadata: blob_metadata || {},
+        blob_input: blob_input,
+        blob_output: blob_output,
+      };
+      const archives = ((data.blob_archives && data.blob_archives.length) ? data.blob_archives : [fallbackArchive])
+        .filter(a => a && (a.archive_id || a.source_type || a.service_name));
+      const archiveRank = { tier1_consumer: 0, rag_service: 1 };
+      const displayArchives = archives.slice().sort((a, b) =>
+        (archiveRank[a.source_type] ?? 99) - (archiveRank[b.source_type] ?? 99)
+      );
+      const primaryArchive = displayArchives.find(a => a.source_type === 'tier1_consumer') || displayArchives[0] || fallbackArchive;
+
+      const { nodes } = buildChain(data);
       const ttype = evidence['aigov.target.type'] || '—';
-      const model = evidence['gen_ai.request.model'] || blob_metadata.model_name || '—';
-      const status = evidence['status'] || blob_metadata.status || '—';
-      const occurredAt = (blob_metadata.occurred_at || '').replace('T', ' ').slice(0, 19);
-      const citCount = blob_metadata.citations_count;
+      const model = evidence['gen_ai.request.model'] || primaryArchive.blob_metadata?.model_name || '—';
+      const status = evidence['status'] || primaryArchive.blob_metadata?.status || '—';
+      const occurredAt = (primaryArchive.blob_metadata?.occurred_at || '').replace('T', ' ').slice(0, 19);
+      const citCount = primaryArchive.blob_metadata?.citations_count;
 
       function renderNode(node) {
         const dBadge = node.duration != null
@@ -1212,15 +1225,67 @@
             <div class="tnode-badges">${dBadge}${sBadge}</div>
           </div>`;
       }
-      const flowHtml = nodes.map((node, i) => {
-        const arrow = i < nodes.length - 1 ? '<div class="tarrow">→</div>' : '';
-        return `${renderNode(node)}${arrow}`;
-      }).join('');
+
+      function writerNodeIndex(archive) {
+        if (archive.source_type === 'tier1_consumer') {
+          return nodes.findIndex(node => node.sub === 'tier1_consumer');
+        }
+        if (archive.source_type === 'rag_service') {
+          return nodes.findIndex(node => node.sub === 'rag_service');
+        }
+        const serviceLabel = (archive.service_name || '').replace('AIGovernTrustworthyDemo.', '');
+        return nodes.findIndex(node => node.label === serviceLabel);
+      }
+
+      function writerLabel(archive) {
+        if (archive.source_type === 'tier1_consumer') return 'Tier 1 App';
+        if (archive.source_type === 'rag_service') return 'RAG Service';
+        return (archive.service_name || 'Service').replace('AIGovernTrustworthyDemo.', '');
+      }
+
+      function renderArchiveNode(archive) {
+        return renderNode({
+          type: 'blob', icon: '💾', label: 'Blob Archive',
+          sub: archive.archive_id ? archive.archive_id.slice(0, 8) + '…' : 'saved',
+          status: 'ok',
+        });
+      }
+
+      const gridTemplate = nodes.map(() => 'minmax(128px, 180px)').join(' 24px ');
+      const gridCells = [];
+      nodes.forEach((node, i) => {
+        gridCells.push(`<div style="grid-row:1;grid-column:${i * 2 + 1};">${renderNode(node)}</div>`);
+        if (i < nodes.length - 1) {
+          gridCells.push(`<div class="tarrow" style="grid-row:1;grid-column:${i * 2 + 2};">→</div>`);
+        }
+      });
+      displayArchives.forEach(archive => {
+        const nodeIndex = writerNodeIndex(archive);
+        if (nodeIndex < 0) return;
+        gridCells.push(`
+          <div style="grid-row:2;grid-column:${nodeIndex * 2 + 1};display:flex;flex-direction:column;align-items:center;gap:4px;">
+            <div style="font-size:11px;color:#8a9bb8;white-space:nowrap;text-align:center;">${escapeHtml(writerLabel(archive))} writes</div>
+            <div style="color:#c8952a;font-size:16px;line-height:1;">↓</div>
+            ${renderArchiveNode(archive)}
+          </div>
+        `);
+      });
 
       function fmtPayload(obj) {
         if (!obj) return '<em style="color:#8a9bb8">No data</em>';
         return `<pre class="tpayload-pre">${escapeHtml(JSON.stringify(obj, null, 2))}</pre>`;
       }
+
+      const payloadsHtml = displayArchives.map(archive => `
+        <details class="tdetails">
+          <summary class="tdetails-summary">📥 ${escapeHtml(writerLabel(archive))} Archive Input <span class="tnode-badge" style="margin-left:auto">collapsed</span></summary>
+          <div class="tdetails-body">${fmtPayload(archive.blob_input)}</div>
+        </details>
+        <details class="tdetails">
+          <summary class="tdetails-summary">📤 ${escapeHtml(writerLabel(archive))} Archive Output <span class="tnode-badge" style="margin-left:auto">collapsed</span></summary>
+          <div class="tdetails-body">${fmtPayload(archive.blob_output)}</div>
+        </details>
+      `).join('');
 
       const citLine = citCount > 0 ? `<span class="tnode-badge" style="margin-left:6px">${citCount} refs</span>` : '';
       const statusClass = status === 'succeeded' ? 'tnode-ok' : 'tnode-err';
@@ -1240,23 +1305,13 @@
             ${occurredAt ? `<span>·</span><span>${escapeHtml(occurredAt)} UTC</span>` : ''}
           </div>
         </div>
-        <div class="tflow" style="padding-bottom:4px;">${flowHtml}</div>
-        <div style="display:flex;align-items:flex-start;padding:0 18px 16px;">
-          <div style="display:flex;flex-direction:column;align-items:center;min-width:128px;max-width:180px;">
-            <div style="color:#c8952a;font-size:16px;padding:3px 0;line-height:1;">↓</div>
-            ${renderNode(blobNode)}
+        <div style="padding:16px 18px 16px;overflow-x:auto;border-top:1px solid rgba(62,92,138,0.07);">
+          <div style="display:grid;grid-template-columns:${gridTemplate};row-gap:12px;column-gap:0;align-items:start;min-width:max-content;">
+            ${gridCells.join('')}
           </div>
-          <div style="padding-top:22px;padding-left:10px;font-size:11px;color:#8a9bb8;white-space:nowrap;">← evidence written by Tier1 App</div>
         </div>
         <div class="tpanel-payloads">
-          <details class="tdetails">
-            <summary class="tdetails-summary">📥 LLM Input <span class="tnode-badge" style="margin-left:auto">collapsed</span></summary>
-            <div class="tdetails-body">${fmtPayload(blob_input)}</div>
-          </details>
-          <details class="tdetails">
-            <summary class="tdetails-summary">📤 LLM Output <span class="tnode-badge" style="margin-left:auto">collapsed</span></summary>
-            <div class="tdetails-body">${fmtPayload(blob_output)}</div>
-          </details>
+          ${payloadsHtml}
         </div>`;
     }
 
