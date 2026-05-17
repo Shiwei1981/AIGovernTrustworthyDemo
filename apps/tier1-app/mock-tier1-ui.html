@@ -1161,11 +1161,11 @@
         });
       }
 
-      // Node 5 — Blob Archive
+      // Blob Archive — written by Tier1 governance sidecar; rendered as branch from Tier1 node
       const archiveId = evidence['aigov.archive.id'] || '';
-      chain.push({ type: 'blob', icon: '💾', label: 'Blob Archive',
-                   sub: archiveId ? archiveId.slice(0, 8) + '…' : 'saved', status: 'ok' });
-      return chain;
+      const blobNode = { type: 'blob', icon: '💾', label: 'Blob Archive',
+                         sub: archiveId ? archiveId.slice(0, 8) + '…' : 'saved', status: 'ok' };
+      return { nodes: chain, blobNode };
     }
 
     function renderTraceHtml(data) {
@@ -1174,25 +1174,27 @@
         return '<div class="tpanel-empty">⚠️ App Insights 中未找到该 Trace ID 的记录（可能仍在写入，请稍后再试）。</div>';
       }
 
-      const chain = buildChain(data);
+      const { nodes, blobNode } = buildChain(data);
       const ttype = evidence['aigov.target.type'] || '—';
       const model = evidence['gen_ai.request.model'] || blob_metadata.model_name || '—';
       const status = evidence['status'] || blob_metadata.status || '—';
       const occurredAt = (blob_metadata.occurred_at || '').replace('T', ' ').slice(0, 19);
       const citCount = blob_metadata.citations_count;
 
-      const flowHtml = chain.map((node, i) => {
+      function renderNode(node) {
         const dBadge = node.duration != null
           ? `<span class="tnode-badge">${node.durationLabel || 'latency'}: ${node.duration}ms</span>` : '';
         const sBadge = `<span class="tnode-status tnode-${node.status}">${node.status === 'ok' ? '✓' : node.status === 'err' ? '✗' : '·'}</span>`;
-        const arrow = i < chain.length - 1 ? '<div class="tarrow">→</div>' : '';
-        return `
-          <div class="tnode tnode-${escapeHtml(node.type)}">
+        return `<div class="tnode tnode-${escapeHtml(node.type)}">
             <div class="tnode-icon">${node.icon}</div>
             <div class="tnode-label">${escapeHtml(node.label)}</div>
             <div class="tnode-sub">${escapeHtml(node.sub || '')}</div>
             <div class="tnode-badges">${dBadge}${sBadge}</div>
-          </div>${arrow}`;
+          </div>`;
+      }
+      const flowHtml = nodes.map((node, i) => {
+        const arrow = i < nodes.length - 1 ? '<div class="tarrow">→</div>' : '';
+        return `${renderNode(node)}${arrow}`;
       }).join('');
 
       function fmtPayload(obj) {
@@ -1218,7 +1220,14 @@
             ${occurredAt ? `<span>·</span><span>${escapeHtml(occurredAt)} UTC</span>` : ''}
           </div>
         </div>
-        <div class="tflow">${flowHtml}</div>
+        <div class="tflow" style="padding-bottom:4px;">${flowHtml}</div>
+        <div style="display:flex;align-items:flex-start;padding:0 18px 16px;">
+          <div style="display:flex;flex-direction:column;align-items:center;min-width:128px;max-width:180px;">
+            <div style="color:#c8952a;font-size:16px;padding:3px 0;line-height:1;">↓</div>
+            ${renderNode(blobNode)}
+          </div>
+          <div style="padding-top:22px;padding-left:10px;font-size:11px;color:#8a9bb8;white-space:nowrap;">← evidence written by Tier1 App</div>
+        </div>
         <div class="tpanel-payloads">
           <details class="tdetails">
             <summary class="tdetails-summary">📥 LLM Input <span class="tnode-badge" style="margin-left:auto">折叠</span></summary>
