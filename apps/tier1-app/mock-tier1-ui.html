@@ -1123,7 +1123,8 @@
           type: 'apim', icon: '🔀', label: 'APIM Gateway',
           sub: entries.length === 1 ? entries[0][0] : `${entries.length} operations`,
           count: apimReqs.length > 1 ? apimReqs.length : 0,
-          duration: Math.round(totalMs), status: allOk ? 'ok' : 'err',
+          duration: Math.round(totalMs), durationLabel: 'gateway total',
+          status: allOk ? 'ok' : 'err',
           statusCode: apimReqs[0].result_code,
         });
       }
@@ -1139,7 +1140,8 @@
         chain.push({
           type: 'backend', icon: targetTypeIcon(ttype), label: tId, sub: ttype,
           count: backendDeps.length > 1 ? backendDeps.length : 0,
-          duration: Math.round(totalMs), status: allOk ? 'ok' : 'err',
+          duration: Math.round(totalMs), durationLabel: backendDeps.length > 1 ? 'backend total' : 'backend',
+          status: allOk ? 'ok' : 'err',
           statusCode: backendDeps[0].result_code,
         });
       }
@@ -1154,6 +1156,7 @@
           type: 'sidecar', icon: '⚡',
           label: first.role.replace('AIGovernTrustworthyDemo.', ''),
           sub: first.name, duration: Math.round(first.duration_ms),
+          durationLabel: 'inference',
           status: first.success ? 'ok' : 'err',
         });
       }
@@ -1180,7 +1183,7 @@
 
       const flowHtml = chain.map((node, i) => {
         const dBadge = node.duration != null
-          ? `<span class="tnode-badge">${node.duration}ms</span>` : '';
+          ? `<span class="tnode-badge">${node.durationLabel || 'latency'}: ${node.duration}ms</span>` : '';
         const cBadge = node.count > 1
           ? `<span class="tnode-count">×${node.count}</span>` : '';
         const sBadge = `<span class="tnode-status tnode-${node.status}">${node.status === 'ok' ? '✓' : node.status === 'err' ? '✗' : '·'}</span>`;
