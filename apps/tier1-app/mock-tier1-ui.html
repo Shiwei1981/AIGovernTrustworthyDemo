@@ -1260,7 +1260,10 @@
         </div>`;
     }
 
+    let _traceGen = 0;
+
     async function loadTrace(traceId) {
+      const gen = ++_traceGen;
       const panel = document.getElementById('tracePanel');
       panel.style.display = '';
       panel.innerHTML = '<div class="tpanel-loading">🔄 Querying App Insights + Blob…</div>';
@@ -1268,22 +1271,25 @@
       try {
         const res = await fetch(`/api/trace/${encodeURIComponent(traceId)}`);
         const data = await res.json();
+        if (gen !== _traceGen) return;
         panel.innerHTML = renderTraceHtml(data);
       } catch (err) {
-        panel.innerHTML = `<div class="tpanel-empty">❌ 查询失败：${escapeHtml(String(err))}</div>`;
+        if (gen !== _traceGen) return;
+        panel.innerHTML = `<div class="tpanel-empty">❌ Query failed: ${escapeHtml(String(err))}</div>`;
       }
     }
 
     function render() {
+      ++_traceGen;
+      const tp = document.getElementById('tracePanel');
+      tp.style.display = 'none';
+      tp.innerHTML = '';
       renderIdentity();
       renderTabs();
       renderPrompts();
       renderTimeline();
       renderDiag();
       renderError();
-      const tp = document.getElementById('tracePanel');
-      tp.style.display = 'none';
-      tp.innerHTML = '';
     }
 
     document.getElementById('sendBtn').onclick = () => send();
