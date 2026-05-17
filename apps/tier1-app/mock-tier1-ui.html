@@ -386,26 +386,30 @@
       font-size: 12px;
     }
 
-    .diag-card li span {
-      color: var(--muted);
-      display: inline-block;
-      width: 72px;
-      flex-shrink: 0;
-      font-size: 12px;
+    .diag-card li {
+      display: grid;
+      grid-template-columns: 68px 1fr;
+      gap: 4px;
+      align-items: start;
     }
 
-    .diag-card li {
-      display: flex;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: 4px;
+    .diag-card li span {
+      color: var(--muted);
+      font-size: 12px;
+      padding-top: 1px;
     }
 
     .diag-card li .mono {
+      display: block;
       font-size: 11px;
-      word-break: break-all;
+      word-break: break-word;
       white-space: normal;
-      min-width: 0;
+      padding: 2px 5px;
+    }
+
+    /* Trace button row — allow button to span both columns */
+    .diag-card li.has-btn {
+      grid-template-columns: 68px auto 1fr;
     }
 
     .chain-flow {
