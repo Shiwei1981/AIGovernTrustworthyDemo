@@ -396,18 +396,15 @@
 
     .diag-card li {
       display: flex;
-      align-items: center;
-      flex-wrap: nowrap;
+      align-items: baseline;
+      flex-wrap: wrap;
       gap: 4px;
-      overflow: hidden;
     }
 
     .diag-card li .mono {
       font-size: 11px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      max-width: 100%;
+      word-break: break-all;
+      white-space: normal;
       min-width: 0;
     }
 
