@@ -1128,8 +1128,17 @@
 
     function buildChain(data) {
       const { evidence, requests, dependencies } = data;
-      const chain = [];
 
+      // Static Tier 2 prefix — always prepend these two nodes
+      const tier2Url = state.bootstrap?.gateway?.runtime_url || '';
+      const tier1ApimUrl = state.bootstrap?.gateway?.tier1_apim_base_url || 'APIM';
+      const prefixNodes = [
+        { type: 'tier1', icon: '🖥️', label: 'Tier 2 App', sub: tier2Url, status: 'ok' },
+        { type: 'apim', icon: '🔀', label: 'APIM', sub: tier1ApimUrl, status: 'ok' },
+      ];
+
+      // Tier1 chain — from App Insights evidence
+      const chain = [];
       const svc = (evidence['service.name'] || 'Tier1App').replace('AIGovernTrustworthyDemo.', '');
       chain.push({ type: 'tier1', icon: '🖥️', label: svc,
                    sub: evidence['aigov.source.type'] || 'tier1_consumer', status: 'ok' });
@@ -1190,7 +1199,7 @@
       const archiveId = evidence['aigov.archive.id'] || '';
       const blobNode = { type: 'blob', icon: '💾', label: 'Blob Archive',
                          sub: archiveId ? archiveId.slice(0, 8) + '…' : 'saved', status: 'ok' };
-      return { nodes: chain, blobNode };
+      return { prefixNodes, nodes: chain, blobNode };
     }
 
     function renderTraceHtml(data) {
@@ -1199,7 +1208,7 @@
         return '<div class="tpanel-empty">⚠️ No record found in App Insights for this Trace ID (may still be ingesting — try again shortly).</div>';
       }
 
-      const { nodes, blobNode } = buildChain(data);
+      const { prefixNodes, nodes, blobNode } = buildChain(data);
       const ttype = evidence['aigov.target.type'] || '—';
       const model = evidence['gen_ai.request.model'] || blob_metadata.model_name || '—';
       const status = evidence['status'] || blob_metadata.status || '—';
@@ -1217,10 +1226,17 @@
             <div class="tnode-badges">${dBadge}${sBadge}</div>
           </div>`;
       }
-      const flowHtml = nodes.map((node, i) => {
-        const arrow = i < nodes.length - 1 ? '<div class="tarrow">→</div>' : '';
+      // Combine prefix + tier1 chain into one flat flow
+      const allNodes = [...prefixNodes, ...nodes];
+      const flowHtml = allNodes.map((node, i) => {
+        const arrow = i < allNodes.length - 1 ? '<div class="tarrow">→</div>' : '';
         return `${renderNode(node)}${arrow}`;
       }).join('');
+
+      // Invisible spacers to align blob branch under the Tier1 App node (after prefix nodes)
+      const blobSpacers = prefixNodes.map(() =>
+        `<div class="tnode" style="visibility:hidden;pointer-events:none;"></div><div class="tarrow" style="visibility:hidden;">→</div>`
+      ).join('');
 
       function fmtPayload(obj) {
         if (!obj) return '<em style="color:#8a9bb8">No data</em>';
@@ -1233,7 +1249,7 @@
       return `
         <div class="tpanel-header">
           <div class="tpanel-title">
-            ${targetTypeIcon(ttype)} Trace Chain (Tier 1)
+            ${targetTypeIcon(ttype)} Trace Chain
             <span class="tnode-status ${statusClass}" style="margin-left:6px">${escapeHtml(status)}</span>
             ${citLine}
             <button class="tpanel-close" onclick="document.getElementById('tracePanel').style.display='none'">✕</button>
@@ -1247,7 +1263,8 @@
         </div>
         <div class="tflow" style="padding-bottom:4px;">${flowHtml}</div>
         <div style="display:flex;align-items:flex-start;padding:0 18px 16px;">
-          <div style="display:flex;flex-direction:column;align-items:center;min-width:128px;max-width:180px;">
+          ${blobSpacers}
+          <div style="display:flex;flex-direction:column;align-items:center;min-width:128px;max-width:180px;flex:1 1 128px;">
             <div style="color:#c8952a;font-size:16px;padding:3px 0;line-height:1;">↓</div>
             ${renderNode(blobNode)}
           </div>
