@@ -16,6 +16,9 @@
 
 本文档面向后续代码实现、脚本接入、APIM 配置、Foundry tracing 配置、KQL 查询设计和演示验证。
 
+> **说明**：本文件只定义 shared-observability 组件本身。  
+> Domain 4 的统一 monitoring / tracing / logging 主规范见：`docs/design-L3-domain-4-monitoring-tracing-logging.md`
+
 ## 2. 输入来源与不可动摇设计要求
 
 本设计在开始编写前，已通读并吸收以下文档中的约束、目标和场景：
@@ -114,6 +117,24 @@ shared-observability 不再被设计为“统一 tracing 平台”或“自定�
 **记录的语义是**：这一层 Python 代码向 Agent / RAG 发出了一次请求，并拿到了一个响应。不是重复记录 Agent 或 RAG 内部的 LLM 调用（那些由被调用的服务自己记录）。
 
 > **与 RAG 服务自身记录的关系**：RAG 服务内部调用 LLM 时，RAG 服务自己也会用 `log_llm_call()` 写一条 `target_type=rag_service` 的 evidence。调用方写的那条同样是 `target_type=rag_service`，但 `source_type` 不同（调用方填自己的类型，如 `tier1_consumer`；RAG 服务自身填 `rag_service`），`service_name` 也不同。查询时可用 `aigov.source.type` 或 `service_name` 区分哪一层写的。
+
+#### R-004b 调用 Consumer App API 时也使用相同记录规范
+
+当一个 Python 应用程序调用的不是底层模型、Agent 或 RAG API，而是**另一个 Consumer App 的 API**，且该 Consumer App 的职责是承载或转发 AI 能力时，也允许并要求使用同一套 `log_llm_call()` 记录规范。
+
+当前第 7 步明确适用的场景是：
+
+1. Tier 2 后端调用 Tier 1 API。
+2. 未来 runner 或其他受控程序直接调用 Tier 1 API。
+
+记录规则如下：
+
+1. 调用 Tier 1 API 时，使用 `target_type = "tier1_consumer"`。
+2. 若未来存在调用 Tier 2 API 并希望纳入统一证据链的场景，可使用 `target_type = "tier2_consumer"`。
+3. `llm_input` 传入发给 Consumer App API 的实际请求体。
+4. `llm_output` 传入从 Consumer App API 返回的完整响应体。
+5. `model_name` / `model_version` 在这一层通常未知，可以为空；真正底层模型身份仍由更下游层记录。
+6. 这条记录的语义是“我调用了一个承载 AI 能力的上游 Consumer App API”，不是伪装成我自己直接调用了底层模型。
 
 #### R-005 查询主面统一在 Application Insights
 
@@ -470,7 +491,7 @@ credential = ClientSecretCredential(
 
 ```json
 {
-  "model": "AIGovernTrustworthyDemoNativeModel",
+  "model": "AIGovernTrustworthyDemoNativeModelGPT5.4mini",
   "messages": [
     {"role": "system", "content": "You are ..."},
     {"role": "user", "content": "What is ..."}
@@ -667,6 +688,11 @@ customEvents
 | `tier2_consumer` | Tier 2 Consumer App 层面的记录 | Tier 2 App |
 
 当同一 `trace_id` 下出现多条 evidence 事件时，`service_name` + `aigov.target.type` 组合可以区分是哪一层应用记录的哪类调用。
+
+补充说明：
+
+1. Tier 2 -> Tier 1 的记录，`target_type` 应为 `tier1_consumer`，而不是把该 hop 伪装成已经直接调用了底层模型。
+2. Tier 2 自身若记录其对外服务层语义，可通过 `service_name` 与 `source_type=tier2_consumer` 区分。
 
 ## 9. 失败处理与边界
 

@@ -25,7 +25,7 @@
 - Azure Web App（RAG / Tier1 / Tier2）：由用户在 Portal 手动创建；RAG Service 使用 Web App `AIGovernTrustworthyRAGApp`
 - Azure Container Registry：步骤 2 当前方案不依赖
 - Observability Blob Archive：新建专用 Storage Account + Container，用于统一保存 AI 调用的完整 input / output / metadata
-- 所有关键参数名（SPN 名、App 名等）写入 `.env.local.L4`，用户可手动修改
+- 仅将程序运行和自动化脚本必需参数写入 `.env.local.L4`；名称、外部对象 ID、运行身份等人工记录项保留在设计文档
 - 所有新建 Azure 资源必须附加以下 Tag：
   - `AI` = 资源用途描述（如 `AIGovernTrustworthyDemo-RAGSearch`）
   - `Owner` = `weishi@MngEnvMCAP029189.onmicrosoft.com`
@@ -95,6 +95,8 @@ az role assignment create \
 
 部署使用现有 SPN `AZ_DEPLOY_CLIENT_ID`。所有应用程序的运行时身份都单独新建，不共用一个运行时 SPN。所有会写统一 AI 调用证据链的运行时身份，都必须具备 observability Blob archive 的写入权限。所有新增 SPN 统一加入 `aigoverndemogroup`，统一使用 client secret 认证；应用对象与对应 service principal 统一写入标签 `AI:SPN`、`Owner:ITBob@MngEnvMCAP029189.onmicrosoft.com`。
 
+> **步骤 6 补充边界（2026-05-16）**：Foundry Agent 和 Copilot Studio Agent 当前**不按“为每个 Agent 单独新建运行时 SPN”**设计。两类 Agent 都属于平台托管对象，当前优先识别其实际运行时 identity / connection owner，再对该身份授权；只有当产品能力被实测验证为支持绑定指定 SPN 作为 Agent runtime principal 时，才把 Agent 专属 SPN 作为正式方案补入。
+
 #### 3.2.1 RAG Service 运行时 SPN（primary）
 
 | 属性 | 值 |
@@ -121,7 +123,7 @@ az role assignment create \
 
 | 权限 | 作用域 | 原因 |
 |---|---|---|
-| `Cognitive Services OpenAI User` | AI Foundry / Azure OpenAI resource | 调用推理 API |
+| `Cognitive Services OpenAI User` | AI Foundry / Azure OpenAI resource | 仅当 Tier 1 需要绕过 APIM 直接调用推理面时才需要；若严格统一走 APIM，可降级为非硬前提 |
 | `Monitoring Metrics Publisher` | `AIGovernTrustworthyRG` | 写入调用链与自定义事件 |
 | `Storage Blob Data Contributor` | Observability Blob Storage Account | 写入 AI 调用归档 |
 
@@ -137,6 +139,19 @@ az role assignment create \
 |---|---|---|
 | `Monitoring Metrics Publisher` | `AIGovernTrustworthyRG` | 写入调用链与自定义事件 |
 | `Storage Blob Data Contributor` | Observability Blob Storage Account | 写入 AI 调用归档 |
+
+#### 3.2.3A Tier 2 -> Tier 1 服务间授权前置条件
+
+步骤 7 当前固定要求 Tier 2 使用 app-only token 调用 Tier 1，因此除了运行时 SPN 与 RBAC 外，还必须补齐以下 Entra 前置条件：
+
+| 前置项 | 目标对象 | 说明 |
+|---|---|---|
+| Tier 1 App Registration | `AIGovernTrustworthyDemoTier1App` | 必须存在独立 App Registration，Application ID URI 固定为 `api://{L4_TIER1_APP_CLIENT_ID}` |
+| Tier 1 API exposure | Tier 1 App Registration | 必须暴露供应用调用的权限面，用于 Tier 2 -> Tier 1 app-only 调用 |
+| Tier 2 App Registration | `AIGovernTrustworthyDemoTier2App` | 必须存在独立 App Registration，并与运行时 SPN 对齐 |
+| 应用权限授予 | Tier 2 -> Tier 1 | 必须把 Tier 1 暴露出的应用权限授予 Tier 2 |
+| Admin consent | Tenant 级 | 必须由管理员完成 consent，否则 Tier 2 无法稳定获取 Tier 1 audience 的 token |
+| Tier 1 caller allowlist | Tier 1 应用层 | 代码层必须至少校验 `appid == L4_TIER2_APP_CLIENT_ID`，不能只依赖 Entra 配置 |
 
 #### 3.2.4 Evaluation Runner 运行时 SPN
 
@@ -226,7 +241,7 @@ az role assignment create \
 | App Service Plan | `AIGovernDemoASP`（复用，资源组 `AIGovernDemoRG`） |
 | Runtime | Python 3.11 |
 | 对外入口 | 通过 APIM `/rag` 统一暴露 |
-| 直接站点 URL | `https://AIGovernTrustworthyRAGApp.azurewebsites.net` |
+| 直接站点 URL | `https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net` |
 | 运行时身份 | `L4_RAG_SERVICE_CLIENT_ID` / `L4_RAG_SERVICE_CLIENT_SECRET` |
 | 环境变量 | `L4_RAG_APP_NAME`、`L4_RAG_APP_URL`、`L4_APP_SERVICE_PLAN_NAME` |
 
@@ -241,7 +256,9 @@ az role assignment create \
 
 #### 4.2.3 Azure OpenAI Service（Domain 4 专用）
 
-> **✅ 已确认（S6，步骤 3 已完成）**：`AIGovernTrustworthyAOAI` 已创建并用于步骤 3。当前已验证 native deployment `AIGovernTrustworthyDemoNativeModel` 可直连调用，APIM `/native-model` 已通过 MSI 代理该 deployment，AOAI 平台诊断中可见 deployment / model / version。
+> **✅ 已确认（S6，步骤 3 已完成 → 已更新）**：当前 live native deployment 为 `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini` `2026-03-17`），在 `aigoverntrustworthyfoundry` account 下；旧 deployment `AIGovernTrustworthyDemoNativeModel` 已删除。APIM `/native-model` 已通过 MSI 代理新 deployment（cognitiveservices 直连路径），AOAI 平台诊断中可见 deployment / model / version。
+
+> **✅ 已确认（2026-05-17 → 已更新）**：`AIGovernTrustworthyRAGProject` 连接了 `aigoverntrustworthyfoundry` cognitiveservices account；当前通过 APIM `/native-model` 直连 `AIGovernTrustworthyDemoNativeModelGPT5.4mini`，以及 `/finetune-model` 通过 project-backed 路径调用 `AIGovernTrustworthyDemoFineTuneModel`。
 
 | 属性 | 值 |
 |---|---|
@@ -257,15 +274,17 @@ az role assignment create \
 
 | Deployment 名 | 模型 | 用途 |
 |---|---|---|
-| `AIGovernTrustworthyDemoNativeModel` | `gpt-5.4-nano` | Native Model（步骤 3）；同时作为 RAG Web App 默认生成模型 |
+| `AIGovernTrustworthyDemoNativeModelGPT5.4mini` | `gpt-5.4-mini` | Native Model（步骤 3）；同时作为 RAG Web App 默认生成模型；版本 `2026-03-17` |
 | `AIGovernTrustworthyDemoFineTuneModel` | Fine-tune 结果 | Fine-tune 部署（步骤 4） |
+
+> **2026-05-17 当前状态复核（已更新）**：旧 deployment `AIGovernTrustworthyDemoNativeModel` 已删除；当前 live deployment 为 `AIGovernTrustworthyDemoNativeModelGPT5.4mini`，在 `aigoverntrustworthyfoundry` account 下，模型为 `gpt-5.4-mini`、版本 `2026-03-17`。
 
 **📋 Portal 重建步骤（仅在需要重建时）**：
 1. Portal → Azure OpenAI → **Create** → 资源组 `AIGovernTrustworthyRG`，名称 `AIGovernTrustworthyAOAI`，Location `canadaeast`，SKU S0
 2. 创建后，在资源 Overview 记录 Endpoint URL → 填入 `L4_AOAI_ENDPOINT`
 3. 将此资源作为 **Connection** 添加到 Foundry Hub `aigoverndemoaihub`：
    - Portal → AI Foundry Hub → Settings → Connected Resources → Add → Azure OpenAI → 选 `AIGovernTrustworthyAOAI`
-4. 在该 AOAI 资源下，创建 model deployment `AIGovernTrustworthyDemoNativeModel`（gpt-5.4-nano）
+4. 如需按当前状态重建 Native deployment，应确保使用名称 `AIGovernTrustworthyDemoNativeModelGPT5.4mini` 并绑定到 `gpt-5.4-mini` 模型（版本 `2026-03-17`）；同时更新 `.env.local.L4` 中对应变量。
 
 ---
 
@@ -339,7 +358,7 @@ az storage account create \
 
 az storage container create --account-name aigoverntrustworthysa --name aigoverntrustworthydemo-rag-docs
 az storage container create --account-name aigoverntrustworthysa --name aigoverntrustworthydemo-finetune
-# 记录 connection string → L4_STORAGE_CONNECTION_STRING
+# 如需兼容 legacy key-based 脚本，可记录 connection string → L4_STORAGE_CONNECTION_STRING；当前 shared-observability 运行时不依赖该变量
 ```
 
 > **当前执行约束（2026-05-14）**：以上 `create` 命令主要作为现有资源来源的历史记录。当前步骤 4 已获得例外授权，可由 AI 自动化在 `aigoverntrustworthysa` 中创建 `aigoverntrustworthydemo-finetune` container；此外还允许创建 fine-tune job 与 `AIGovernTrustworthyDemoFineTuneModel` deployment。若执行中还需要创建其他类型云资源，应视为新的前置阻塞并先请求用户确认。
@@ -353,12 +372,12 @@ az storage container create --account-name aigoverntrustworthysa --name aigovern
 | 格式 | JSONL，Azure OpenAI **chat completion** 格式（`messages` 数组） |
 | 总条数 | 5000 条 |
 | 内容来源 | 用户上传的 5 个 AI Governance 主题 PDF 文档 |
-| 生成方式 | 先用已存在的 native model `AIGovernTrustworthyDemoNativeModel`（`gpt-5.4-nano`）基于 5 个 PDF 内容批量生成问答对，再整理为 JSONL |
+| 生成方式 | 先用已存在的 native model `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini`）基于 5 个 PDF 内容批量生成问答对，再整理为 JSONL |
 | 故意错误条数 | 0 条（本轮 draft 不把故意错误样本放入训练集；如需要对照，单独保留 eval / red teaming 数据集） |
 | Fine-tune 目标模型 | `gpt-4.1` |
 | 部署后 API 格式 | 与基础模型一致（OpenAI chat completion 格式） |
 | 训练文件路径 | `aigoverntrustworthydemo-finetune/aigoverntrustworthydemo-qa-5000.jsonl`（上传到 `aigoverntrustworthysa`） |
-| Storage 变量来源 | `.env.local.L4` 中的 `L4_STORAGE_ACCOUNT_NAME`、`L4_STORAGE_CONNECTION_STRING`、`L4_STORAGE_CONTAINER_FINETUNE` |
+| Storage 变量来源 | `.env.local.L4` 中的 `L4_STORAGE_ACCOUNT_NAME`、`L4_STORAGE_CONTAINER_FINETUNE`；`L4_STORAGE_CONNECTION_STRING` 仅保留给 legacy key-based 脚本，当前 shared-observability / Web App 运行时不要求 |
 | 仓库归档路径 | `docs/finetune-qa-archive/aigoverntrustworthydemo-qa-5000.jsonl` |
 
 **训练数据 JSONL 格式示例**：
@@ -469,7 +488,7 @@ az storage container create \
 
 #### 4.2.9 App Service Plan + Web Apps（RAG / Tier 1 / Tier 2）
 
-> **✅ 已确认（S6，已调整）**：复用现有 App Service Plan `AIGovernDemoASP`。步骤 2 创建 RAG Web App；步骤 9 / 10 的 Tier 1 / Tier 2 也可按需继续复用该 Plan。
+> **✅ 已确认（S6，已调整）**：复用现有 App Service Plan `AIGovernDemoASP`。步骤 2 创建 RAG Web App；步骤 7 的 Tier 1 / Tier 2 也可按需继续复用该 Plan。
 
 **App Service Plan**：
 
@@ -488,6 +507,13 @@ az storage container create \
 | RAG Service | `AIGovernTrustworthyRAGApp` | `L4_RAG_APP_NAME` | `AIGovernTrustworthyDemo.RAGService` | `L4_RAG_SERVICE_CLIENT_ID` |
 | Tier 1 Consumer App | `AIGovernTrustworthyDemoTier1App` | `L4_TIER1_APP_NAME` | `AIGovernTrustworthyDemo.Tier1App` | `L4_TIER1_APP_CLIENT_ID` |
 | Tier 2 Consumer App | `AIGovernTrustworthyDemoTier2App` | `L4_TIER2_APP_NAME` | `AIGovernTrustworthyDemo.Tier2App` | `L4_TIER2_APP_CLIENT_ID` |
+
+**Tier 1 / Tier 2 认证前置**：
+
+1. 两个 Web App 都必须启用 App Service Authentication / EasyAuth，页面入口走 Entra 用户登录。
+2. Tier 1 必须同时接受用户 token 与来自 Tier 2 的 app-only token。
+3. Tier 2 不向 Tier 1 透传浏览器用户 token；Tier 2 后端固定用自身运行时 SPN 换取 `api://{L4_TIER1_APP_CLIENT_ID}/.default` audience 的 token。
+4. EasyAuth 保护的是页面入口；Tier 1 API 的应用 caller allowlist 仍由应用代码负责二次校验。
 
 **RAG Web App 网络配置（已完成）**：
 
@@ -578,7 +604,7 @@ az vm create \
   --size Standard_B4s_v2 \
   --admin-username azureuser \
   --generate-ssh-keys \
-  --nsg AIGovernTrustworthyDemoVMNSG \
+  # 注意：实际 VM 未使用独立 NSG；NSG 由 VNet 默认规则 AIGovernCanadaEastVNET-default-nsg-canadaeast 承担
   --tags AI=AIGovernTrustworthyDemo-HuggingFaceVM Owner=weishi@MngEnvMCAP029189.onmicrosoft.com
 # 记录 Private IP → L4_VM_PRIVATE_IP
 ```
@@ -598,7 +624,7 @@ AZ_DEPLOY_TENANT_ID                     # 同上
 AZ_DEPLOY_CLIENT_ID                     # 227dcc2d-bea0-4156-a65b-0ea91a746203
 AZ_DEPLOY_CLIENT_SECRET                 # （从 .env.local 复制）
 AZ_SUBSCRIPTION_ID                      # 47da4b42-0493-49ff-b3c8-45df3ae06821
-L4_AI_FOUNDRY_PROJECT_ENDPOINT          # https://0ccc5150-37cd-4136-8f18-02728d0b38b7.workspace.eastus2.api.azureml.ms
+L4_AI_FOUNDRY_PROJECT_ENDPOINT          # 旧 Foundry project endpoint；保留给旧路径，不作为步骤 7 consumer-app project-backed 模型入口
 APPLICATIONINSIGHTS_CONNECTION_STRING   # （从 .env.local 复制，或替换为 L4 专用实例）
 LOG_ANALYTICS_WORKSPACE_NAME            # aiexvddh5zbxgtg
 LOG_LEVEL                               # INFO
@@ -658,26 +684,26 @@ L4_OBSERVABILITY_BLOB_PREFIX=aigoverntrustworthy
 
 # ── Azure OpenAI Service（Domain 4 专用，AIGovernTrustworthyAOAI）──────────────
 L4_AOAI_SERVICE_NAME=AIGovernTrustworthyAOAI
-L4_AOAI_ENDPOINT=https://aigoverntrustworthyaoai.openai.azure.com/
+L4_AOAI_ENDPOINT=https://aigoverntrustworthyfoundry.cognitiveservices.azure.com/
 
-# ── Azure AI Foundry（旧 AzureML workspace 后端；非当前 RAG Web App 运行路径）──────
-L4_AI_FOUNDRY_HUB_NAME=aigoverndemoaihub
-L4_AI_FOUNDRY_PROJECT_NAME=aigovenaihubproject
-L4_AI_FOUNDRY_PROJECT_ENDPOINT=https://0ccc5150-37cd-4136-8f18-02728d0b38b7.workspace.eastus2.api.azureml.ms
+# ── Azure AI Foundry（Domain 4 project data plane）────────────────────────
+L4_AI_FOUNDRY_HUB_NAME=aigoverntrustworthyfoundry
+L4_AI_FOUNDRY_PROJECT_NAME=AIGovernTrustworthyRAGProject
+L4_AI_FOUNDRY_PROJECT_ENDPOINT=https://aigoverntrustworthyfoundry.services.ai.azure.com/api/projects/AIGovernTrustworthyRAGProject
 
 # ── Azure AI Foundry · 模型部署 ────────────────────────────────────────────
-L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT=AIGovernTrustworthyDemoNativeModel
-L4_FOUNDRY_NATIVE_MODEL_ENDPOINT=https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel/chat/completions?api-version=2025-01-01-preview
+L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT=AIGovernTrustworthyDemoNativeModelGPT5.4mini
+L4_FOUNDRY_NATIVE_MODEL_ENDPOINT=https://aigoverntrustworthyfoundry.cognitiveservices.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModelGPT5.4mini/chat/completions?api-version=2025-01-01-preview
 L4_FOUNDRY_FINETUNE_MODEL_DEPLOYMENT=AIGovernTrustworthyDemoFineTuneModel
 L4_FOUNDRY_FINETUNE_MODEL_ENDPOINT=<to-be-created>
 
-# ── Azure AI Foundry · Agent（步骤 7：Foundry 自定义 Agent）────────────────
-L4_FOUNDRY_AGENT_NAME=AIGovernTrustworthyDemoFoundryAgent
+# ── Azure AI Foundry · Agent（步骤 6 子对象：Foundry 自定义 Agent）──────────
+# 固定名称与运行身份记录在步骤 6 文档；这里只保留程序调用必需的 ID
 L4_FOUNDRY_AGENT_ID=<to-be-created>
 
 # ── RAG Governance Service（步骤 2：Web App + lightweight retrieval）────────
 L4_RAG_APP_NAME=AIGovernTrustworthyRAGApp
-L4_RAG_APP_URL=https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net  # https://AIGovernTrustworthyRAGApp.azurewebsites.net
+L4_RAG_APP_URL=https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net
 L4_RAG_RETRIEVAL_MODE=local_lexical_in_memory
 L4_RAG_SERVICE_URL=https://aigoverntrustworthydemoapim.azure-api.net/rag  # APIM /rag base URL；RAG Web App 的 /ui/responses 服务端代理读取此值
 
@@ -690,7 +716,7 @@ L4_AI_SEARCH_QUERY_KEY=<to-be-created>
 
 # ── Storage（fine-tune 数据 + RAG 文档）────────────────────────────────────
 L4_STORAGE_ACCOUNT_NAME=aigoverntrustworthysa
-L4_STORAGE_CONNECTION_STRING=<to-be-created>
+L4_STORAGE_CONNECTION_STRING=""
 L4_STORAGE_CONTAINER_RAG_DOCS=aigoverntrustworthydemo-rag-docs
 L4_STORAGE_CONTAINER_FINETUNE=aigoverntrustworthydemo-finetune
 
@@ -704,14 +730,17 @@ L4_TIER2_APP_URL=<to-be-deployed>               # https://AIGovernTrustworthyDem
 
 # ── VM（Hugging Face 模型）────────────────────────────────────────────────
 L4_VM_NAME=AIGovernTrustworthyDemoPhi3VM
+L4_VM_ADMIN_USERNAME=azureuser
 L4_VM_PRIVATE_IP=10.1.1.8
+L4_VM_PUBLIC_IP=20.175.113.183
 L4_VM_PUBLIC_DNS=aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com
+L4_VM_MODEL_NAME=Phi-3-mini-4k-instruct
 L4_VM_MODEL_API_PORT=11434
+L4_VM_HF_TOKEN_NAME=ReadTokenForAIGovernDemo
+# L4_VM_HF_TOKEN=<secret — stored in .env.local.L4 only>
 
 # ── Copilot Studio Agent ──────────────────────────────────────────────────
-L4_COPILOT_STUDIO_AGENT_NAME=AIGovernTrustworthyDemoCopilotStudioAgent
-L4_COPILOT_STUDIO_BOT_ID=<to-be-created>
-L4_COPILOT_STUDIO_ENVIRONMENT_ID=<to-be-confirmed>
+# bot/environment/connection owner 记录在步骤 6 文档；这里只保留程序调用必需的 Direct Line secret
 L4_COPILOT_STUDIO_DIRECTLINE_SECRET=<to-be-created>
 
 # ── 模型命名（用于 target registry 和 report 展示）────────────────────────
@@ -722,7 +751,7 @@ L4_TARGET_REGISTRY_VERSION=1
 
 ## 6. 资源创建方式总览
 
-### 6A. 手动创建资源（用户在 Portal 完成，完成后填入 `.env.local.L4`）
+### 6A. 手动创建资源（用户在 Portal 完成；程序必需输入再填入 `.env.local.L4`，其余记录写入步骤 6 文档）
 
 | # | 资源类型 | 资源名 | 资源组 | SKU / 规格 | Tag: AI= | 完成后填入变量 | 当前状态 |
 |---|---|---|---|---|---|---|---|
@@ -733,9 +762,42 @@ L4_TARGET_REGISTRY_VERSION=1
 | M5 | App Service Plan（复用） | `AIGovernDemoASP` | `AIGovernDemoRG` | B3，Linux，canadaeast | 现有资源 | `L4_APP_SERVICE_PLAN_NAME` | 已存在 |
 | M5A | Azure OpenAI Service | `AIGovernTrustworthyAOAI` | `AIGovernTrustworthyRG` | S0，canadaeast，`disableLocalAuth=true` | `AIGovernTrustworthyDemo-AOAI` | `L4_AOAI_ENDPOINT` | ✅ 已创建；native deployment 已验证；APIM `/native-model` 已接入 |
 | M6 | RAG Web App | `AIGovernTrustworthyRAGApp` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5；v1.0.4；VNet 集成（default subnet）；WEBSITE_DNS_SERVER=168.63.129.16 | `AIGovernTrustworthyDemo-RAGService` | `L4_RAG_APP_URL` | ✅ 已创建并部署（v1.0.4，含 /ui/responses 代理，APIM 全链路 trace_id 验证通过）|
-| M7 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier1App` | `L4_TIER1_APP_URL` | 待创建 |
-| M8 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` | `AIGovernTrustworthyRG` | Python 3.11，使用 M5 | `AIGovernTrustworthyDemo-Tier2App` | `L4_TIER2_APP_URL` | 待创建 |
-| M9 | Copilot Studio Agent | `AIGovernTrustworthyDemoCopilotStudioAgent` | Copilot Studio（Power Platform） | — | N/A | `L4_COPILOT_STUDIO_BOT_ID`、`L4_COPILOT_STUDIO_DIRECTLINE_SECRET` | 待创建 |
+| M7 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` | `AIGovernTrustworthyRG` | Linux container，使用 M5；ACR 镜像 `aigoverndemoacr.azurecr.io/AIGovernTrustworthyDemoTier1App:v1.0.0` | `AIGovernTrustworthyDemo-Tier1App` | `L4_TIER1_APP_URL` | ✅ 已创建；运行时 app settings、EasyAuth、APIM `/tier1` 与 Entra API exposure 已完成 |
+| M8 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` | `AIGovernTrustworthyRG` | Linux container，使用 M5；ACR 镜像 `aigoverndemoacr.azurecr.io/AIGovernTrustworthyDemoTier2App:v1.0.0` | `AIGovernTrustworthyDemo-Tier2App` | `L4_TIER2_APP_URL` | ✅ 已创建；运行时 app settings、EasyAuth、APIM `/tier2` 与 Tier2->Tier1 app-only 授权已完成 |
+| M9 | Copilot Studio Agent | `AIGovernTrustworthyDemoCopilotStudioAgent` | Copilot Studio（Power Platform）；environment `Default-7d3389c6-5b33-43be-b0fd-d7c303755fb5` / `Contoso (default)` | 已创建；`SalesTeamSite` 知识源已选择；发布需正式 Copilot Studio license | N/A | 程序输入只保留 `L4_COPILOT_STUDIO_DIRECTLINE_SECRET`；`bot_id` / `environment_id` / `connection owner` 记入步骤 6 文档 | 🟡 发布受 license 阻塞，POC 暂停，Direct Line secret 未生成 |
+| M10 | Azure AI Foundry Agent | `AIGovernTrustworthyDemoFoundryAgent` | 实际创建于 `AIGovernTrustworthyRAGProject` | Foundry Portal 手工创建；复用现有 AOAI model；上传 5 个治理 PDF；APIM `/foundry-agent` 已接入 project-level assistant/thread API | N/A | `L4_FOUNDRY_AGENT_ID=asst_qPEQxZ6Gc894gcxQjaIOkdF6` | ✅ 已创建并完成 APIM smoke test |
+
+#### 4.2.9A 步骤 7 开发部署前置 checklist
+
+下表用于在开始 Tier 1 / Tier 2 编码与部署前，逐项确认资源、配置、权限与认证前提是否已经满足。状态定义：`已完成`、`部分完成`、`未完成`。`2026-05-17` 已使用 deploy SPN 对 Azure 实际状态做过一次核查。
+
+| 类别 | 检查项 | 目标值 / 约束 | 当前状态（2026-05-17） | 说明 |
+|---|---|---|---|---|
+| 资源 | App Service Plan | 复用 `AIGovernDemoASP` | 已完成 | 现有 Plan 可复用 |
+| 资源 | RAG Web App | `AIGovernTrustworthyRAGApp` 已创建并可访问 | 已完成 | 当前已部署并纳入 APIM `/rag` |
+| 资源 | Tier 1 Web App | `AIGovernTrustworthyDemoTier1App` 已创建 | 已完成 | 2026-05-17 deploy SPN 已确认 Web App 运行中；当前为 Linux container + ACR `AIGovernTrustworthyDemoTier1App:v1.0.0` |
+| 资源 | Tier 2 Web App | `AIGovernTrustworthyDemoTier2App` 已创建 | 已完成 | 2026-05-17 deploy SPN 已确认 Web App 运行中；当前为 Linux container + ACR `AIGovernTrustworthyDemoTier2App:v1.0.0` |
+| APIM | `/tier1` API | 指向 Tier 1 Web App，透传 Bearer token | 已完成 | 2026-05-17 已创建 `/`、`/app`、`/static/{assetPath}`、`/ui/bootstrap`、`/ui/metadata`、`/api/metadata`、`/api/health` 与 5 个 `/api/chat/*` operation，并应用 API policy + diagnostics |
+| APIM | `/tier2` API | 指向 Tier 2 Web App，透传 Bearer token | 已完成 | 2026-05-17 已创建 `/`、`/app`、`/static/{assetPath}`、`/ui/bootstrap`、`/ui/metadata`、`/api/metadata`、`/api/health` 与 5 个 `/api/chat/*` operation，并应用 API policy + diagnostics |
+| 链路 | RAG target readiness | `/rag` 已可用 | 已完成 | 作为 Step 7 下游可用 |
+| 链路 | Foundry Agent readiness | `/foundry-agent` 可用且 target 已创建 | 已完成 | `AIGovernTrustworthyDemoFoundryAgent` / `asst_qPEQxZ6Gc894gcxQjaIOkdF6` 已通过 APIM assistants + thread/run smoke test |
+| 链路 | VM model readiness | `/vm-model` 可用 | 已完成 | 当前已 ready |
+| 链路 | Native model readiness | `/native-model` project-backed 可用 | 已完成 | 当前已 active |
+| 链路 | Fine-tune model readiness | `/finetune-model` project-backed 可用 | 已完成 | 当前已 active |
+| Entra | Tier 1 App Registration | 存在且 Application ID URI=`api://{L4_TIER1_APP_CLIENT_ID}` | 已完成 | `identifierUris`、EasyAuth redirect URI 与 application appRole `Tier2App.Access` 已配置；当前步骤 7 不依赖 delegated scope |
+| Entra | Tier 2 App Registration | 存在且与 Tier 2 运行时身份对齐 | 已完成 | EasyAuth redirect URI 与指向 Tier 1 appRole 的 `requiredResourceAccess` 已配置 |
+| Entra | Tier 1 API exposure | 已暴露给应用 caller 的权限面 | 已完成 | Tier 1 已暴露 `api://{L4_TIER1_APP_CLIENT_ID}` 与 application appRole `Tier2App.Access` |
+| Entra | Tier 2 -> Tier 1 permission grant | Tier 2 已获调用 Tier 1 的应用权限 | 已完成 | `az ad app permission add` 已成功；Graph appRoleAssignment 已成功；后续已实测可签发 `.default` app-only token |
+| Entra | Admin consent | 已完成 tenant 级 consent | 已完成 | 当前单租户 app-only 路径未使用 `az ad app permission admin-consent`；改以 service principal appRole assignment 落地，并已实测拿到带 `roles=["Tier2App.Access"]` 的 access token |
+| Web App 配置 | Tier 1 EasyAuth | 已启用 | 已完成 | 实测 `auth.enabled=true`，`action=RedirectToLoginPage`，issuer / clientId 对齐 |
+| Web App 配置 | Tier 2 EasyAuth | 已启用 | 已完成 | 实测 `auth.enabled=true`，`action=RedirectToLoginPage`，issuer / clientId 对齐 |
+| 环境变量 | `L4_RAG_APP_URL` | 非占位符且与实际 Web App URL 对齐 | 已完成 | 已回填实际 HTTPS URL |
+| 环境变量 | `L4_TIER1_APP_URL` | 非占位符 | 已完成 | 已回填实际 HTTPS URL |
+| 环境变量 | `L4_TIER2_APP_URL` | 非占位符 | 已完成 | 已回填实际 HTTPS URL |
+| 环境变量 | `.env.local.L4` 可被 shell 直接 `source` | 占位符值需保持合法 shell 字面量 | 已完成 | 当前剩余占位符都已带引号，文件可被 shell 直接加载 |
+| 环境变量 | `AZ_RUNTIME_*` / `OTEL_SERVICE_NAME` | 映射到各自 Web App 配置 | 已完成 | Tier 1 / Tier 2 的 `AZ_RUNTIME_TENANT_ID`、`AZ_RUNTIME_CLIENT_ID`、`AZ_RUNTIME_CLIENT_SECRET` 与 `OTEL_SERVICE_NAME` 已写入 Web App app settings |
+| 权限 | Tier 1 runtime RBAC | Blob evidence + Metrics；若直连模型再加 OpenAI User | 已完成 | 当前已实测存在 `Monitoring Metrics Publisher` 与 `Storage Blob Data Contributor`；若未来绕过 APIM，再补 OpenAI User |
+| 权限 | Tier 2 runtime RBAC | Blob evidence + Metrics | 已完成 | 当前已实测存在 `Monitoring Metrics Publisher` 与 `Storage Blob Data Contributor` |
 
 > 当前 POC 的统一观测通过 `APIM +（适用时的 Foundry tracing / AOAI 平台诊断）+ shared-observability + Application Insights + Blob archive` 落地。
 
@@ -752,14 +814,13 @@ L4_TARGET_REGISTRY_VERSION=1
 | A5 | SPN | `AIGovernTrustworthyDemoPyRITRunnerSPN` | N/A（AAD 对象） | `az ad sp create-for-rbac` | N/A | `L4_PYRIT_RUNNER_CLIENT_ID`、`L4_PYRIT_RUNNER_CLIENT_SECRET` |
 | A6 | Azure AI Search（fallback） | `aigoverntrustworthysearch` | `AIGovernTrustworthyRG` | `az search service create` | `AIGovernTrustworthyDemo-RAGSearch` | `L4_AI_SEARCH_ADMIN_KEY`、`L4_AI_SEARCH_QUERY_KEY` |
 | A7 | AI Search 索引（fallback） | `aigoverntrustworthydemo-rag-index` | — | Python ingestion 脚本 | N/A | `L4_AI_SEARCH_INDEX_NAME`（已知） |
-| A8 | Storage Account（复用） | `aigoverntrustworthysa` | `AIGovernTrustworthyRG` | 复用现有 Storage Account | `AIGovernTrustworthyDemo-Storage` | `L4_STORAGE_CONNECTION_STRING` |
+| A8 | Storage Account（复用） | `aigoverntrustworthysa` | `AIGovernTrustworthyRG` | 复用现有 Storage Account | `AIGovernTrustworthyDemo-Storage` | `L4_STORAGE_ACCOUNT_NAME` |
 | A9 | Storage Container | `aigoverntrustworthydemo-rag-docs` | — | `az storage container create` | N/A | — |
 | A10 | Storage Container | `aigoverntrustworthydemo-finetune` | — | `az storage container create` | N/A | — |
 | A11 | Azure VM | `AIGovernTrustworthyDemoPhi3VM` | `AIGovernTrustworthyRG` | 已手动创建 | `AIGovernTrustworthyDemo-HuggingFaceVM` | `L4_VM_PRIVATE_IP` |
-| A12 | Network Security Group | `AIGovernTrustworthyDemoVMNSG` | `AIGovernTrustworthyRG` | 随 VM 自动创建 | `AIGovernTrustworthyDemo-HuggingFaceVM` | — |
-| A13 | Azure OpenAI 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModel` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT` |
+| A12 | Network Security Group | `AIGovernCanadaEastVNET-default-nsg-canadaeast`（实际 NSG；RG=`aigoverndemorg`，非 `AIGovernTrustworthyRG`）| `aigoverndemorg` | 随 VNet 自动创建；非 VM 独立 NSG | `AIGovernTrustworthyDemo-HuggingFaceVM` | — |
+| A13 | Azure OpenAI 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModelGPT5.4mini` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_NATIVE_MODEL_DEPLOYMENT` |
 | A14 | Azure OpenAI Fine-tune Deployment | `AIGovernTrustworthyDemoFineTuneModel` | `AIGovernTrustworthyRG` | AOAI Portal / SDK | N/A | `L4_FOUNDRY_FINETUNE_MODEL_DEPLOYMENT` |
-| A15 | Azure AI Foundry Agent | `AIGovernTrustworthyDemoFoundryAgent` | `AIGovernDemoRG / aigovenaihubproject` | Foundry Portal / SDK | N/A | `L4_FOUNDRY_AGENT_ID` |
 | A16 | VM 模型安装 | Phi-3-mini via HF CLI + llama.cpp server | VM 内部 | SSH + 初始化脚本 | N/A | — |
 | A17 | RBAC 角色授权 | Deploy SPN + RAG / Tier1 / Tier2 等应用运行时 SPN | 各资源作用域 | `az role assignment create` | N/A | — |
 
@@ -784,13 +845,14 @@ L4_TARGET_REGISTRY_VERSION=1
 | # | 决策内容 | 涉及步骤 | 状态 |
 |---|---|---|---|
 | S1 | RAG 主路径锁定为 Azure Web App + 代码切块 + 进程内轻量级检索；AI Search schema 仅保留 fallback | 步骤 2（RAG Service） | ✅ 已确认 |
-| S2 | Fine-tune：JSONL chat completion 格式，5000 条 AI 生成 Q&A，主题为 AI Governance，要求尽量覆盖用户上传的 5 个 PDF；Q&A 生成阶段复用 native model `gpt-5.4-nano`，真正 fine-tune base model 使用 `gpt-4.1`；训练文件上传复用 `.env.local.L4` 中既有 storage，且问答对需在 `docs/finetune-qa-archive/` 留档 | 步骤 4（fine-tune 模型） | ✅ 已确认 |
+| S2 | Fine-tune：JSONL chat completion 格式，5000 条 AI 生成 Q&A，主题为 AI Governance，要求尽量覆盖用户上传的 5 个 PDF；Q&A 生成阶段复用 native model `gpt-5.4-mini`（deployment `AIGovernTrustworthyDemoNativeModelGPT5.4mini`），真正 fine-tune base model 使用 `gpt-4.1`；训练文件上传复用 `.env.local.L4` 中既有 storage，且问答对需在 `docs/finetune-qa-archive/` 留档 | 步骤 4（fine-tune 模型） | ✅ 已确认 |
 | S3 | VM CPU-only，优先最低成本可运行 SKU，使用 Phi-3-mini-4k-instruct（Q4_K_M GGUF，~2.2GB），通过 HF CLI 下载 + llama.cpp server（内部端口 11435）+ Python sidecar（外部端口 11434）暴露 OpenAI 兼容 API | 步骤 5（VM 模型） | ✅ 已确认 |
 | S4 | Observability Blob archive 全新建设，由用户手动创建，当前已创建（`aigoverntrustworthysa` + `ai-invocation-archive`） | 步骤 1（基础设施） | ✅ 已确认 |
 | S5 | App Insights 复用现有实例（`APPLICATIONINSIGHTS_CONNECTION_STRING`） | 步骤 1（基础设施） | ✅ 已确认 |
-| S6 | 复用现有 App Service Plan（`AIGovernDemoASP`，Linux，canadaeast）；步骤 2 创建 RAG Web App，步骤 9/10 可继续复用 | 步骤 2/9/10 | ✅ 已确认 |
-| S7 | 旧 Foundry Hub / Project 复用现有实例；步骤 2 不再新建 RAG Hosted Agent 专用 Foundry Account / Project | 步骤 2/3/4/7 | ✅ 已确认 |
+| S6 | 复用现有 App Service Plan（`AIGovernDemoASP`，Linux，canadaeast）；步骤 2 创建 RAG Web App，步骤 7 可继续复用 | 步骤 2/7 | ✅ 已确认 |
+| S7 | 旧 Foundry Hub / Project 复用现有实例；步骤 2 不再新建 RAG Hosted Agent 专用 Foundry Account / Project | 步骤 2/3/4/6 | ✅ 已确认 |
 | S8 | RAG 运行时身份使用现有 `AIGovernTrustworthyDemoRAGServiceSPN`；不再依赖 Hosted Agent 平台生成 identity | 步骤 2 | ✅ 已确认 |
+| S9 | Copilot Studio publish 需要正式 `Copilot Studio` tenant license 与 `Copilot Studio User License`；trial SKU `CCIBOTS_PRIVPREV_VIRAL` 可创建 / 测试但不能 publish | 步骤 6 | 🟡 阻塞，当前 POC 暂停，待补齐 license 与用户指令 |
 
 ---
 
@@ -832,11 +894,22 @@ L4_TARGET_REGISTRY_VERSION=1
 | Tier 1 App Web App | `AIGovernTrustworthyDemoTier1App` |
 | Tier 2 App Web App | `AIGovernTrustworthyDemoTier2App` |
 | Azure VM | `AIGovernTrustworthyDemoPhi3VM` |
-| Network Security Group | `AIGovernTrustworthyDemoVMNSG` |
-| Azure AI Foundry 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModel` |
+| Network Security Group | `AIGovernCanadaEastVNET-default-nsg-canadaeast`（RG=`aigoverndemorg`；注：非 VM 独立 NSG，为 VNet 默认 NSG）|
+| Azure AI Foundry 原生模型 Deployment | `AIGovernTrustworthyDemoNativeModelGPT5.4mini` |
 | Azure AI Foundry Fine-tune Deployment | `AIGovernTrustworthyDemoFineTuneModel` |
 | Azure AI Foundry Agent | `AIGovernTrustworthyDemoFoundryAgent` |
 | Copilot Studio Agent | `AIGovernTrustworthyDemoCopilotStudioAgent` |
+
+### 8.3 步骤 6 运行身份记录要求
+
+步骤 6 的两个 Agent 当前不预设新的 Agent 专属 SPN，而是要求把实际运行身份记录下来：
+
+| 对象 | 当前运行身份策略 | 创建完成后必须记录 |
+|---|---|---|
+| Foundry Agent | 优先按 Foundry Project / Agent 平台托管身份或 connection identity 设计 | 在步骤 6 文档中记录实际运行身份 |
+| Copilot Studio Agent | 优先按 Copilot Studio / Power Platform knowledge connection owner 设计 | 在步骤 6 文档中记录实际 connection owner |
+
+> **当前结论**：步骤 6 不先假设两类 Agent 支持绑定任意指定 SPN 作为 runtime principal。权限授予顺序固定为：先确认实际后台身份，再授 AOAI 或 SharePoint 权限。
 
 
 ---
@@ -855,6 +928,7 @@ L4_TARGET_REGISTRY_VERSION=1
 | DD-006 | RAG / Tier 1 / Tier 2 Web App 统一走 App Service；RAG 复用现有 `AIGovernDemoASP` | 减少资源数量，避免新建 Service Plan；符合当前用户要求 | 2026-05 |
 | DD-007 | 步骤 2 放弃 Hosted Agent；旧 Foundry Hub / Project 继续仅用于其他 Foundry 场景 | Hosted Agent 受区域限制；RAG Web App 不再依赖新后端 Foundry Project | 2026-05 |
 | DD-008 | App Insights 复用现有 | POC 阶段日志量小，无需隔离；减少资源数量 | 2026-05 |
-| DD-009 | 所有关键参数名写入 `.env.local.L4` | 支持后续脚本自动化；用户可手动修改参数名 | 2026-05 |
+| DD-009 | `.env.local.L4` 仅保留程序运行和自动化脚本必需参数；人工记录项写入设计文档 | 既支持后续脚本自动化，也避免把 bot/environment/identity 一类元数据误当成运行配置 | 2026-05 |
 | DD-010 | 步骤 4 执行路径固定为 AI 自动化；仅允许创建 fine-tune container、fine-tune job、fine-tuned deployment；中间 Q&A 同步归档到 `docs/finetune-qa-archive/` | 满足用户要求：自动化闭环、复用既有 storage、保留设计目录归档，并把允许创建的例外边界显式化 | 2026-05 |
 | DD-011 | Fine-tune base model 的最终可用性必须以 `fine_tuning.jobs.create` 实测为准，而不能只看 `list-models` capability 字段 | 2026-05-14 实测表明：catalog 暴露 fine-tune 能力字段并不等价于当前账号/区域/endpoint 上能成功创建 fine-tune job | 2026-05 |
+| DD-012 | Copilot Studio role / license 判断以 Microsoft Learn 当前文档与租户实测为准 | 2026-05-17 实测：`weishi@MngEnvMCAP029189.onmicrosoft.com` 已通过 Dataverse System Administrator application user 分配 `Bot Author`；但 tenant 只有 `CCIBOTS_PRIVPREV_VIRAL` trial SKU，官方文档明确 trial 不能 publish，因此 Direct Line / APIM 继续等待正式 license | 2026-05 |

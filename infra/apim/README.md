@@ -8,6 +8,9 @@ APIM 配置脚本目录，管理 `AIGovernTrustworthyDemoAPIM` 中各 AI 服务�
 |---|---|---|---|
 | RAG Governance Service | `/rag` | `AIGovernTrustworthyRAGApp` Web App | ✅ 脚本就绪，待执行 |
 | Native Model | `/native-model` | Azure OpenAI (via APIM MSI) | ✅ 已配置（MSI RBAC + policy + diagnostics） |
+| Fine-tune Model | `/finetune-model` | Azure OpenAI fine-tune deployment | ✅ 已配置（MSI + policy + diagnostics） |
+| Foundry Agent | `/foundry-agent` | Azure AI Foundry Agent assistant/thread API | ✅ 已配置并通过 APIM smoke test |
+| Copilot Studio Agent | `/copilot-studio` | Direct Line | ✅ 脚本就绪，待 Agent 创建后执行 |
 
 ## APIM 网络模式
 
@@ -48,7 +51,7 @@ RAG Web App 自带的手动测试 UI 不让浏览器直连 Internal APIM；UI �
 ### `setup-native-model-api.sh`
 
 将 APIM `/native-model` API 配置为代理 Domain 4 Azure OpenAI 原生模型 deployment
-`AIGovernTrustworthyDemoNativeModel`。
+`AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini` `2026-03-17`）。
 
 **执行一次即可；幂等（已存在的 API / operation / diagnostics 会 update 而非报错）。**
 
@@ -71,6 +74,79 @@ bash infra/apim/setup-native-model-api.sh
 5. 为 `native-model` 创建 API-level App Insights diagnostics
 6. 更新 `infra/target-registry/targets.json` 中 native model 条目的 APIM 状态说明
 
+### `setup-finetune-model-api.sh`
+
+将 APIM `/finetune-model` API 配置为代理 Domain 4 fine-tune deployment
+`AIGovernTrustworthyDemoFineTuneModel`。
+
+```bash
+bash infra/apim/setup-finetune-model-api.sh
+```
+
+该脚本完成：
+1. 给 APIM MSI 授 fine-tune 后端所需的 `Cognitive Services OpenAI User`
+2. 创建或更新 API `finetune-model`
+3. 创建或更新 `POST /chat/completions`
+4. 设置 MSI 鉴权、`traceparent`、`api-version`、错误处理策略
+5. 创建 API-level App Insights diagnostics
+6. 更新 `infra/target-registry/targets.json`
+
+### `setup-foundry-agent-api.sh`
+
+将 APIM `/foundry-agent` API 配置为代理步骤 6 的 Azure AI Foundry Agent。
+
+```bash
+bash infra/apim/setup-foundry-agent-api.sh
+```
+
+该脚本完成：
+1. 从 `.env.local.L4` 读取 `L4_AI_FOUNDRY_PROJECT_NAME`、`L4_AI_FOUNDRY_PROJECT_ENDPOINT`、`L4_FOUNDRY_AGENT_ID`
+2. 创建或更新 API `foundry-agent`
+3. 创建 assistant / 线程 / 消息 / 运行相关操作：
+  - `GET /assistants`
+  - `GET /assistants/{assistantId}`
+  - `POST /threads`
+  - `POST /threads/runs`
+  - `POST /threads/{threadId}/messages`
+  - `POST /threads/{threadId}/runs`
+  - `GET /threads/{threadId}/runs/{runId}`
+  - `GET /threads/{threadId}/messages`
+4. 设置 API 级策略：
+  - 注入 `traceparent`
+  - 用 APIM MSI 获取 `https://ai.azure.com` token
+  - 注入 `Authorization: Bearer <msi-token>`
+  - 固定 `api-version=v1`
+  - 透传治理头与 APIM request id
+5. 创建 API-level App Insights diagnostics
+6. 更新 `infra/target-registry/targets.json`
+
+**注意**：该脚本不替你修改 Foundry Project 的 RBAC。当前设计要求 APIM MSI 对 Foundry Agent 数据面访问的授权已在项目侧具备；如果运行后后端返回 `401/403`，需要回到 Foundry Project 检查 APIM MSI 的实际权限。
+
+### `setup-copilot-studio-api.sh`
+
+将 APIM `/copilot-studio` API 配置为代理步骤 6 的 Copilot Studio Agent Direct Line 通道。
+
+```bash
+bash infra/apim/setup-copilot-studio-api.sh
+```
+
+该脚本完成：
+1. 从 `.env.local.L4` 读取 `L4_COPILOT_STUDIO_DIRECTLINE_SECRET`
+2. 在 APIM 中创建或更新 Secret Named Value `copilot-directline-secret`
+3. 创建或更新 API `copilot-studio`
+4. 创建 Direct Line 操作：
+  - `POST /conversations`
+  - `POST /conversations/{conversationId}/activities`
+  - `GET /conversations/{conversationId}/activities`
+5. 设置 API 级策略：
+  - 注入 `traceparent`
+  - 使用 APIM Named Value 注入 `Authorization: Bearer {{copilot-directline-secret}}`
+  - 透传治理头与 APIM request id
+6. 创建 API-level App Insights diagnostics
+7. 更新 `infra/target-registry/targets.json`
+
+`bot_id`、`environment_id` 等手工创建元数据不再要求放入 `.env.local.L4`；若需保留，记录在步骤 6 设计文档即可。
+
 ## 验证（执行后）
 
 ```bash
@@ -84,10 +160,19 @@ curl -s -X POST https://aigoverntrustworthydemoapim.azure-api.net/rag/responses 
 curl -s -X POST https://aigoverntrustworthydemoapim.azure-api.net/native-model/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"What does NIST AI RMF stand for?"}],"max_completion_tokens":128}'
+
+curl -s -X POST https://aigoverntrustworthydemoapim.azure-api.net/foundry-agent/threads/runs \
+  -H "Content-Type: application/json" \
+  -d '{"assistant_id":"<foundry-agent-id>","thread":{"messages":[{"role":"user","content":"Summarize the key ideas in NIST AI RMF."}]}}'
+
+curl -s -X POST https://aigoverntrustworthydemoapim.azure-api.net/copilot-studio/conversations \
+  -H "Content-Type: application/json" \
+  -d '{}'
 ```
 
 ## 后续未完成项
 
 - 可选：在 `POST /responses` 上加 JWT 验证策略（`<validate-jwt>`），要求调用方持有有效 Entra token
 - 可选：在 `POST /native-model/chat/completions` 上加 JWT 验证策略（`<validate-jwt>`），要求调用方持有有效 Entra token
+- 可选：在 `foundry-agent` 与 `copilot-studio` API 上加 `validate-jwt` 或来源限制策略
 - 可选：通过 Azure Front Door / App Gateway 为 Internal VNet APIM 提供公网入口

@@ -1,21 +1,21 @@
 {
   "version": 1,
-  "description": "Domain 4 AI Governance Trustworthy Demo — target registry. Lists every governed AI target with its identity, endpoint, and type for use by evaluation runners, red teaming, and the dashboard metric collector.",
+  "description": "Domain 4 AI Governance Trustworthy Demo \u2014 target registry. Lists every governed AI target with its identity, endpoint, and type for use by evaluation runners, red teaming, and the dashboard metric collector.",
   "targets": [
     {
       "target_id": "AIGovernTrustworthyDemoNativeModel",
       "target_type": "foundry_native_model",
-      "display_name": "Foundry Native Model (gpt-5.4-nano)",
-      "model_name": "gpt-5.4-nano",
+      "display_name": "Foundry Native Model (gpt-5.4-mini)",
+      "model_name": "gpt-5.4-mini",
       "model_version": "2026-03-17",
-      "aoai_resource": "AIGovernTrustworthyAOAI",
-      "deployment_name": "AIGovernTrustworthyDemoNativeModel",
-      "endpoint": "https://aigoverntrustworthyaoai.openai.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModel/chat/completions?api-version=2025-01-01-preview",
+      "aoai_resource": "aigoverntrustworthyfoundry",
+      "deployment_name": "AIGovernTrustworthyDemoNativeModelGPT5.4mini",
+      "endpoint": "https://aigoverntrustworthyfoundry.cognitiveservices.azure.com/openai/deployments/AIGovernTrustworthyDemoNativeModelGPT5.4mini/chat/completions?api-version=2025-01-01-preview",
       "apim_path": "/native-model",
-      "apim_note": "VNet Internal — APIM native-model API configured at /native-model. APIM MSI has Cognitive Services OpenAI User on AIGovernTrustworthyAOAI.",
+      "apim_note": "VNet Internal \u2014 APIM native-model API configured at /native-model. APIM MSI has Cognitive Services OpenAI User on aigoverntrustworthyfoundry and proxies to the cognitiveservices deployment path for AIGovernTrustworthyDemoNativeModelGPT5.4mini.",
       "auth": "entra",
       "status": "active",
-      "notes": "Step 3. Direct AOAI endpoint verified 2026-05-13. APIM /native-model configured to proxy POST /chat/completions with MSI auth, W3C trace context, and App Insights diagnostics."
+      "notes": "Step 3. 2026-05-17 native deployment moved to AIGovernTrustworthyDemoNativeModelGPT5.4mini. APIM /native-model now proxies the cognitiveservices deployment path with MSI auth, W3C trace context, and explicit api-version injection."
     },
     {
       "target_id": "AIGovernTrustworthyDemoRAGService",
@@ -23,15 +23,15 @@
       "display_name": "RAG Governance Service (Web App)",
       "app_service_name": "AIGovernTrustworthyRAGApp",
       "app_service_plan": "AIGovernDemoASP",
-      "model_deployment": "AIGovernTrustworthyDemoNativeModel",
+      "model_deployment": "AIGovernTrustworthyDemoNativeModelGPT5.4mini",
       "retrieval_mode": "local_lexical_in_memory",
       "endpoint": "https://aigoverntrustworthydemoapim.azure-api.net/rag",
-      "backend_url": "<to-be-deployed>",
+      "backend_url": "https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net",
       "apim_path": "/rag",
       "apim_operation": "POST /rag/responses",
       "auth": "entra",
-      "status": "pending",
-      "notes": "Step 2. Hosted Agent path abandoned due to region limitation. Current approved design is Azure Web App on existing AIGovernDemoASP with lightweight code-based retrieval and no default vector store dependency."
+      "status": "active",
+      "notes": "Step 2. Hosted Agent path abandoned due to region limitation. Current approved design is Azure Web App on existing AIGovernDemoASP with lightweight code-based retrieval and no default vector store dependency. 2026-05-17 deploy SPN check confirmed the Web App is running and APIM /rag points to the live backend."
     },
     {
       "target_id": "AIGovernTrustworthyDemoFineTuneModel",
@@ -40,24 +40,28 @@
       "model_name": "gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo",
       "model_version": "1",
       "deployment_name": "AIGovernTrustworthyDemoFineTuneModel",
-      "endpoint": "https://aigoverntrustworthyfoundry.cognitiveservices.azure.com/openai/deployments/AIGovernTrustworthyDemoFineTuneModel/chat/completions?api-version=2025-01-01-preview",
+      "endpoint": "https://aigoverntrustworthyfoundry.services.ai.azure.com/api/projects/AIGovernTrustworthyRAGProject/openai/v1/chat/completions",
       "apim_path": "/finetune-model",
       "auth": "entra",
       "status": "active",
-      "notes": "Step 4. Fine-tune deployment ready and APIM /finetune-model configured to proxy POST /chat/completions with MSI auth, W3C trace context, and App Insights diagnostics.",
-      "apim_note": "VNet Internal — APIM finetune-model API configured at /finetune-model. APIM MSI has Cognitive Services OpenAI User on aigoverntrustworthyfoundry."
+      "notes": "Step 4. 2026-05-17 APIM /finetune-model switched to the RAG project-backed path. Verified live with legacy request shape (no explicit model field), MSI auth, W3C trace context, and App Insights diagnostics.",
+      "apim_note": "VNet Internal \u2014 APIM finetune-model API configured at /finetune-model. APIM MSI has Cognitive Services OpenAI User on aigoverntrustworthyfoundry and proxies to AIGovernTrustworthyRAGProject/openai/v1."
     },
     {
       "target_id": "AIGovernTrustworthyDemoFoundryAgent",
       "target_type": "foundry_agent",
       "display_name": "Foundry Custom Agent",
-      "model_name": "<to-be-selected>",
-      "model_version": "<to-be-created>",
-      "endpoint": "<to-be-created>",
-      "apim_path": "<to-be-configured>",
+      "model_name": "gpt-5.4-mini",
+      "model_version": "2026-03-17",
+      "endpoint": "https://aigoverntrustworthydemoapim.azure-api.net/foundry-agent",
+      "apim_path": "/foundry-agent",
       "auth": "entra",
-      "status": "pending",
-      "notes": "Step 7. Custom Foundry Agent (not the RAG agent). Not yet created."
+      "status": "active",
+      "notes": "Step 6. Foundry Custom Agent verified as assistant asst_qPEQxZ6Gc894gcxQjaIOkdF6 / AIGovernTrustworthyDemoFoundryAgent. Legacy hosted agent aigovern-rag-agent was deleted. APIM /foundry-agent proxies project-level assistants, threads, messages, and runs; callers supply assistant_id in run requests. Foundry tracing remains the internal platform evidence source.",
+      "agent_id": "asst_qPEQxZ6Gc894gcxQjaIOkdF6",
+      "agent_name": "AIGovernTrustworthyDemoFoundryAgent",
+      "backend_url": "https://aigoverntrustworthyfoundry.services.ai.azure.com/api/projects/AIGovernTrustworthyRAGProject",
+      "apim_note": "VNet Internal \u2014 APIM foundry-agent API configured at /foundry-agent. APIM uses MSI to request https://ai.azure.com token and proxies to the AIGovernTrustworthyRAGProject assistant/thread API."
     },
     {
       "target_id": "AIGovernTrustworthyDemoCopilotStudioAgent",
@@ -66,10 +70,10 @@
       "bot_id": "<to-be-created>",
       "environment_id": "<to-be-confirmed>",
       "directline_endpoint": "https://directline.botframework.com/v3/directline",
-      "apim_path": "<to-be-configured>",
+      "apim_path": "/copilot-studio",
       "auth": "directline_secret",
       "status": "pending",
-      "notes": "Step 8. Copilot Studio Agent not yet created."
+      "notes": "Step 6. Copilot Studio Agent not yet created."
     },
     {
       "target_id": "AIGovernTrustworthyDemoPhi3VM",
@@ -85,32 +89,33 @@
       "vm_public_dns": "aigoverntrustworthydemophi3vm.canadaeast.cloudapp.azure.com",
       "api_port": 11434,
       "endpoint": "http://10.1.1.8:11434",
-      "apim_path": "<to-be-configured>",
+      "apim_path": "/vm-model",
+      "apim_endpoint": "https://aigoverntrustworthydemoapim.azure-api.net/vm-model",
       "auth": "none",
       "status": "ready",
-      "notes": "Step 5. VM provisioned manually. OS: Ubuntu 22.04.5 LTS (jammy). Size: Standard B4s v2 (4 vcpu, 16 GiB). Private IP: 10.1.1.8. OS disk: 30 GB (design asked 64 GB — sufficient for model+runtime at ~3-4 GB; no resize needed). Public DNS assigned, while NSG only allows VirtualNetwork traffic to 11434/TCP. llama.cpp server + Python sidecar deployed. /health and /v1/chat/completions smoke tests passed. App Insights trace emission verified from VM sidecar logs."
+      "notes": "Step 5. VM provisioned manually. OS: Ubuntu 22.04.5 LTS (jammy). Size: Standard B4s v2 (4 vcpu, 16 GiB). Private IP: 10.1.1.8. OS disk: 30 GB. NSG VirtualNetwork\u219211434/TCP. llama.cpp server + Python sidecar deployed as systemd units. /health and /v1/chat/completions smoke tests passed. App Insights AIGovernTrustworthyVMModelTrace verified. APIM /vm-model configured 2026-05-15: serviceUrl=http://10.1.1.8:11434, policy (delete Auth header + X-Governance-Target-Type), App Insights diagnostics enabled, VNet health smoke test passed."
     },
     {
       "target_id": "AIGovernTrustworthyDemoTier1App",
       "target_type": "tier1_consumer",
       "display_name": "Tier 1 Consumer App",
       "app_service_name": "AIGovernTrustworthyDemoTier1App",
-      "endpoint": "<to-be-deployed>",
-      "apim_path": "<to-be-configured>",
+      "endpoint": "https://aigoverntrustworthydemotier1app-f8ayhddzcce3g2gd.canadaeast-01.azurewebsites.net",
+      "apim_path": "/tier1",
       "auth": "entra",
-      "status": "pending",
-      "notes": "Step 9. App Service not yet created."
+      "status": "ready",
+      "notes": "Step 7. Web App, EasyAuth, runtime app settings, and APIM /tier1 are configured. Tier 1 App Registration now exposes api://{L4_TIER1_APP_CLIENT_ID} with application appRole Tier2App.Access; deploy SPN also verified Tier 2 can obtain an app-only token for the Tier 1 audience carrying roles=[Tier2App.Access]."
     },
     {
       "target_id": "AIGovernTrustworthyDemoTier2App",
       "target_type": "tier2_consumer",
       "display_name": "Tier 2 Consumer App",
       "app_service_name": "AIGovernTrustworthyDemoTier2App",
-      "endpoint": "<to-be-deployed>",
-      "apim_path": "<to-be-configured>",
+      "endpoint": "https://aigoverntrustworthydemotier2app-gvfxdna2btc5h4af.canadaeast-01.azurewebsites.net",
+      "apim_path": "/tier2",
       "auth": "entra",
-      "status": "pending",
-      "notes": "Step 10. App Service not yet created."
+      "status": "ready",
+      "notes": "Step 7. Web App, EasyAuth, runtime app settings, and APIM /tier2 are configured. Tier 2 App Registration now requests the Tier 1 application appRole and its service principal has been assigned that role for app-only Tier2->Tier1 calls."
     }
   ]
 }

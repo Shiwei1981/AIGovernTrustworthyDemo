@@ -6,7 +6,7 @@
 
 步骤 3 在本项目中的定位，不是单纯“部署一个模型”，而是建立一个能够被 Domain 4 持续纳管的 **Foundry Native Model target**，作为后续 tracing、evaluation、red teaming、dashboard 指标和上层应用复用的基础对象。
 
-> **当前实施状态（2026-05-14）**：`AIGovernTrustworthyDemoNativeModel` 已完成直连验证、APIM `/native-model` 接入、APIM MSI → AOAI RBAC 授权、API-level App Insights diagnostics 配置，以及 AOAI 平台诊断验证。
+> **当前实施状态（2026-05-17 → 已更新）**：旧 deployment `AIGovernTrustworthyDemoNativeModel` 已删除；当前 live deployment 为 `AIGovernTrustworthyDemoNativeModelGPT5.4mini`，位于 `aigoverntrustworthyfoundry` account 下，底层模型为 `gpt-5.4-mini`、版本 `2026-03-17`、状态 `Succeeded`。APIM `/native-model` 已切换到 cognitiveservices 直连路径，认证 scope 为 `https://cognitiveservices.azure.com`，policy 注入 `api-version=2025-01-01-preview`。2026-05-17 实测：`/native-model/chat/completions` 返回 200，实际模型标识 `gpt-5.4-mini-2026-03-17`。
 
 **关联文档**：
 
@@ -18,6 +18,7 @@
 | `docs/design-L2-domain-4-prerequisites.md` | 上级步骤列表；步骤 3 的总入口 |
 | `docs/design-L2-domain-4-prerequisites-lowleveldesign.md` | 资源、命名、环境变量、权限与部署对象清单 |
 | `docs/design-L2-domain-4-output-trustworthiness.md` | 约束步骤 3 必须支撑的 Domain 4 指标与证据字段 |
+| `docs/design-L3-domain-4-monitoring-tracing-logging.md` | Domain 4 monitoring / tracing / logging 主规范 |
 | `docs/design-L3-domain-4-apim.md` | 约束 `/native-model` APIM 入口、认证与 tracing 方式 |
 | `docs/design-L3-domain-4-shared-observability-component.md` | 约束 Python 调用方如何记录证据与字段 |
 | `docs/design-L3-domain-4-rag-governance-service.md` | 说明步骤 2 的 RAG 服务默认复用本步骤部署的原生模型 |
@@ -47,7 +48,9 @@
 2. **调用入口在哪里**：既要能直连 AOAI 验证，也要具备 APIM `/native-model` 的统一入口。
 3. **治理身份是什么**：必须有固定 `target_id` / `target_type` / `model_name` / `model_version`，并进入 target registry。
 4. **证据链如何成立**：必须支持适用时的 Foundry tracing、APIM tracing、AOAI 平台诊断、调用方 shared-observability、App Insights 查询关联。
-5. **后续怎么复用**：必须能被步骤 2 的 RAG 服务、步骤 9/10 的 Consumer App、步骤 13/15 的 evaluation / red teaming 复用。
+5. **后续怎么复用**：必须能被步骤 2 的 RAG 服务、步骤 7 的 Consumer Apps、步骤 10/11 的 evaluation / red teaming 复用。
+
+**2026-05-17 补充确认**：旧 `AIGovernTrustworthyDemoNativeModel` deployment 已删除；步骤 7 Consumer App 统一通过 APIM `/native-model` 调用当前 live deployment `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini`）；AOAI cognitiveservices 直连继续保留为底层烟测与排障路径。
 
 ---
 
@@ -80,10 +83,10 @@
 ### 5.2 部署对象需求
 
 1. 步骤 3 必须部署一个 **Foundry / AOAI 可管理的文本基础模型**。
-2. 当前首选模型为 `gpt-5.4-nano`，deployment 名称为 `AIGovernTrustworthyDemoNativeModel`。
-3. 若目标 region / quota / model catalog 无法提供 `gpt-5.4-nano`，不得自行替换为其他模型后继续推进；必须先记录限制并征得用户确认。
+2. 当前已落地的 deployment 名称为 `AIGovernTrustworthyDemoNativeModelGPT5.4mini`，控制面对应模型为 `gpt-5.4-mini`，版本 `2026-03-17`。
+3. 若后续需要再次更换该 deployment 所绑定的底层模型，不得自行替换后继续推进；必须先记录变化并征得用户确认。
 4. 步骤 3 只覆盖**文本类模型**，不引入图像、语音、视频或多模态模型。
-5. 模型部署必须落在当前已批准的 Domain 4 AOAI 资源 `AIGovernTrustworthyAOAI` 上，不额外新增平行模型服务资源。
+5. 当前 live deployment 的控制面资源位于 `aigoverntrustworthyfoundry` account；底层仍属于已批准的 Domain 4 Foundry/AOAI 资源边界，不额外新增平行模型服务资源。
 
 ### 5.3 资源与身份需求
 
@@ -123,8 +126,8 @@
 |---|---|
 | `target_type` | `foundry_native_model` |
 | `target_id` | `AIGovernTrustworthyDemoNativeModel` |
-| `deployment_name` | `AIGovernTrustworthyDemoNativeModel` |
-| `model_name` | 默认 `gpt-5.4-nano`；若因平台限制调整，必须同步更新设计与 registry |
+| `deployment_name` | `AIGovernTrustworthyDemoNativeModelGPT5.4mini` |
+| `model_name` | `gpt-5.4-mini`；若后续调整，必须同步更新设计与 registry |
 | `model_version` | 必须记录到 target registry 和后续证据字段中 |
 | `auth` | `entra` |
 | `apim_path` | `/native-model` |
@@ -170,9 +173,9 @@
 步骤 3 交付后，至少要支持以下后续动作：
 
 1. 被步骤 2 的 RAG Web App 作为默认底层生成模型调用。
-2. 被步骤 9 的 Tier 1 Consumer App 通过 APIM 调用。
-3. 被步骤 13 的 Evaluation Runner 纳入 `foundry_native_model` 目标清单。
-4. 被步骤 15 的 PyRIT / red teaming 以统一 target 身份纳入测试。
+2. 被步骤 7 的 Tier 1 Consumer App 通过 APIM 调用。
+3. 被步骤 10 的 Evaluation Runner 纳入 `foundry_native_model` 目标清单。
+4. 被步骤 11 的 PyRIT / red teaming 以统一 target 身份纳入测试。
 5. 被 Domain 4 L1/L2 报表按独立 target type 展示，不与其他对象合并。
 
 ---
@@ -182,10 +185,10 @@
 以下事项不应混入步骤 3：
 
 1. Fine-tune 数据准备、训练作业和 fine-tuned deployment（属于步骤 4）。
-2. VM Hugging Face 模型部署与 OpenAI-compatible API（属于步骤 5/6）。
-3. Foundry 自定义 Agent 或 Copilot Studio Agent 的创建（属于步骤 7/8）。
+2. VM Hugging Face 模型部署与 OpenAI-compatible API（属于步骤 5；完整调用方 observability 由后续调用方步骤补齐）。
+3. Foundry 自定义 Agent 或 Copilot Studio Agent 的创建（属于步骤 6）。
 4. 新建额外检索、embedding、vector store 或 Azure AI Search 资源来支撑 native model。
-5. Consumer App 的 UI、登录流和业务页面（属于步骤 9/10）。
+5. Consumer App 的 UI、登录流和业务页面（属于步骤 7）。
 6. 为了“先跑通”而绕开 APIM、App Insights、shared-observability、target registry 的临时长期方案。
 
 ---
@@ -222,7 +225,7 @@
 
 出现以下任一情况时，Copilot 应停止自动推进并请求用户确认：
 
-1. `gpt-5.4-nano` 在目标区域不可用、配额不足、或必须更换模型。
+1. 当前 `AIGovernTrustworthyDemoNativeModel` 绑定的底层模型需要再次更换。
 2. 需要新增本设计未批准的 Azure 资源、资源组、网络路径或额外服务。
 3. 需要修改 `.env.local.L4` 中现有变量名或新增平行命名。
 4. 需要偏离 `disableLocalAuth = true`、改用 API key 或绕开 Entra 认证。
@@ -245,5 +248,5 @@
 - 直连 AOAI deployment 可调用
 - APIM `/native-model/chat/completions` 可返回 200
 - APIM diagnostics 已写入 App Insights
-- AOAI 平台诊断日志中可见 `modelDeploymentName = AIGovernTrustworthyDemoNativeModel`
+- AOAI 平台诊断日志中可见 `modelDeploymentName = AIGovernTrustworthyDemoNativeModelGPT5.4mini`
 - 当前 APIM → AOAI REST 调用链不单独要求 Foundry Studio Tracing 页面出现专属 span；该路径的平台侧证据以 APIM dependency + AOAI `AzureDiagnostics` 为准

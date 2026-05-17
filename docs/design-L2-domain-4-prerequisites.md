@@ -28,9 +28,8 @@
 | Azure AI Foundry 自定义 Agent | Evaluation + Red Teaming | 是 |
 | Copilot Studio 自定义 Agent | Evaluation + Red Teaming | 是 |
 | VM 中从 Hugging Face 下载并部署的自建模型 | 红队外部调用（PyRIT） + shared-observability 留痕 | 是 |
-| Tier 1 Consumer App（AI 服务直接调用方） | App Insights（完整调用链） + Evaluation + Red Teaming | 是 |
-| Tier 2 Consumer App（通过 Tier 1 间接使用 AI） | App Insights（平台 trace 上下文透传，间接 AI 使用追踪） | 是 |
-| Tier 2 Consumer App（通过 Tier 1 间接使用 AI） | App Insights（平台 trace 上下文透传，间接 AI 使用追踪） | 是 |
+| Tier 1 Consumer App（AI 服务直接调用方） | App Insights（完整调用链） + shared-observability + Blob evidence + Evaluation + Red Teaming | 是 |
+| Tier 2 Consumer App（通过 Tier 1 间接使用 AI） | App Insights（平台 trace 上下文透传） + shared-observability + Blob evidence + 间接 AI 使用追踪 | 是 |
 
 **约束**：本领域仅覆盖**文本类模型**，不含图像生成、视频、语音等多模态输出。
 
@@ -65,6 +64,9 @@ Domain 4 的二级页面在展示 coverage、failure rate、red teaming、model 
 
 ### 2.4 APIM / Foundry tracing / shared-observability / Blob / Application Insights 统一观测设计
 
+> 本节是统一 observability 设计的 L2 摘要。  
+> 监控、链路、日志、evidence archive、字段字典、写入责任与写入时机的主规范见：`docs/design-L3-domain-4-monitoring-tracing-logging.md`
+
 Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的统一观测方案。统一 AI Governance 证据链由五部分组成：
 
 1. `Azure API Management (APIM)`：所有可代理 HTTP hop 的默认 tracing 入口。
@@ -86,7 +88,7 @@ Domain 4 本期采用“平台 tracing 为主，Python 证据记录为辅”的�
 
 | 对象 | 统一记录路径 |
 |---|---|
-| App 2 -> App 1 | APIM tracing + App 原生遥测 |
+| App 2 -> App 1 | APIM tracing + App 原生遥测 + 调用方 evidence |
 | App 1 -> RAG / AOAI native model / VM API | APIM tracing（若可代理）+ Web App / Python evidence；其中 APIM → AOAI REST 额外依赖 AOAI 平台诊断 |
 | App 1 -> Foundry Agent / Hosted Agent API | APIM tracing（若可代理）+ Python evidence；Agent 内部 hop 由 Foundry tracing 记录 |
 | Foundry Agent / Hosted Agent 内部 span | Foundry tracing |
@@ -175,7 +177,7 @@ Application Insights 的管理对象分为三类：
 | Smoke test script | 直连或经 APIM 访问目标 endpoint | 是 | 是 | 是 | `trace_id`、`response_id`、`payload_ref` |
 | Azure AI Foundry Evaluations | Foundry target / endpoint 直连 | 是，用于补写 evidence | 是 | 是 | `test_run_id`、`trace_id`、`response_id` |
 | PyRIT Red Teaming | 直连 target registry 记录的 endpoint | 是 | 是 | 是 | `test_run_id`、`trace_id`、`response_id`、`severity` |
-| Dashboard metric collector | 读取 App Insights / Blob / ADO | 否 | 否 | 否 | `target_type`、`target_id`、`model_name`、`model_version` |
+| Dashboard metric collector | 读取 App Insights / Blob | 否 | 否 | 否 | `target_type`、`target_id`、`model_name`、`model_version` |
 
 ---
 
@@ -200,19 +202,15 @@ Application Insights 的管理对象分为三类：
 | 2 | 建立 RAG 服务 | ✅ 已完成 | Azure Web App、APIM、AOAI、Blob | Copilot + 用户授权 | Web App 代码（v1.0.4）、PDF 目录、轻量级检索实现、APIM `/rag` |
 | 3 | Foundry 原生模型部署 | ✅ 已完成 | Azure OpenAI、APIM | Copilot + 用户授权 | 模型 deployment、APIM `/native-model`、target registry、验证命令 |
 | 4 | Foundry fine-tune 模型 | ✅ 已完成 | Azure AI Foundry | Copilot + 用户授权 | fine-tune job、deployment、APIM `/finetune-model`、5000 Q&A 归档、target registry |
-| 5 | VM Hugging Face 模型 + API | 🟡 进行中 | Azure VM、App Insights | Copilot + deploy SPN | 安装脚本、API 服务代码、遥测配置 |
-| 6 | VM 调用链观测接入（调用方 shared-observability + VM 侧 App Insights） | ⬜ 待开始 | 调用方脚本 / App、APIM、Blob、App Insights | Copilot + 用户授权 | 调用方 observability 接入代码、字段映射、验证脚本 |
-| 7 | Foundry 自定义 Agent | ⬜ 待开始 | Azure AI Foundry | Copilot + 用户 Portal | Agent 清单、调用脚本 |
-| 8 | Copilot Studio Agent | ⬜ 待开始 | Copilot Studio、Direct Line | 用户 UI + Copilot 验证 | UI 操作指南、验证脚本 |
-| 9 | Tier 1 Consumer App | ⬜ 待开始 | App Service、APIM、全部 AI 后端 | Copilot + 用户授权 | API 代码、connector、部署脚本 |
-| 10 | Tier 2 Consumer App | ⬜ 待开始 | App Service、APIM、Tier 1 | Copilot + 用户授权 | API 代码、KQL 追踪验证 |
-| 11 | App Insights 遥测字段配置 | ⬜ 待开始 | shared-observability、App Insights | Copilot + 用户授权 | 字段规范、KQL 验证语句 |
-| 12 | Foundry Tracing 能力 | ⬜ 待开始 | Azure AI Foundry、App Insights | Copilot + 用户 Portal | tracing 配置说明、适用范围表 |
-| 13 | Foundry Evaluations 能力 | ⬜ 待开始 | Azure AI Foundry Evaluations | Copilot + 用户授权 | target 清单、评估脚本 |
-| 14 | Azure DevOps Work Items | ⬜ 待开始 | Azure DevOps | Copilot + 用户 PAT | ADO 字段设计、写入脚本 |
-| 15 | Red Teaming 环境（PyRIT） | ⬜ 待开始 | PyRIT、全部目标 endpoint | Copilot + 用户授权 | connector 代码、攻击集 |
-| 16 | 指标状态语义定义 | ⬜ 待开始 | Domain 4 报表、API | Copilot + 用户确认阈值 | 状态语义表、字段定义 |
-| 17 | 首页与二级页指标映射校准 | ⬜ 待开始 | L1/L2 页面、Domain 4 API | Copilot + 用户确认 | 页面设计、API 设计、开发任务清单 |
+| 5 | VM Hugging Face 模型 + API | ✅ 已完成 | Azure VM、App Insights | Copilot + deploy SPN | 安装脚本、API 服务代码、遥测配置 |
+| 6 | Agent（Foundry 自定义 Agent + Copilot Studio Agent） | 🟡 部分完成；Copilot Studio Agent POC 暂停于正式 license 阻塞点 | Azure AI Foundry、Copilot Studio、SharePoint、Direct Line、APIM | Copilot + 用户 Portal / UI | Agent 清单、端点记录、调用验证脚本、身份授权说明 |
+| 7 | Consumer Apps（Tier 1 + Tier 2） | ⬜ 待开始 | App Service、APIM、全部 AI 后端、Tier 1 | Copilot + 用户授权 | Tier 1/Tier 2 API 代码、forwarding API、部署脚本、KQL 追踪验证 |
+| 8 | App Insights 遥测字段配置 | ⬜ 待开始 | shared-observability、App Insights | Copilot + 用户授权 | 字段规范、KQL 验证语句 |
+| 9 | Foundry Tracing 能力 | ⬜ 待开始 | Azure AI Foundry、App Insights | Copilot + 用户 Portal | tracing 配置说明、适用范围表 |
+| 10 | Foundry Evaluations 能力 | ⬜ 待开始 | Azure AI Foundry Evaluations | Copilot + 用户授权 | target 清单、评估脚本 |
+| 11 | Red Teaming 环境（PyRIT） | ⬜ 待开始 | PyRIT、全部目标 endpoint | Copilot + 用户授权 | connector 代码、攻击集 |
+| 12 | 指标状态语义定义 | ⬜ 待开始 | Domain 4 报表、API | Copilot + 用户确认阈值 | 状态语义表、字段定义 |
+| 13 | 首页与二级页指标映射校准 | ⬜ 待开始 | L1/L2 页面、Domain 4 API | Copilot + 用户确认 | 页面设计、API 设计、开发任务清单 |
 
 ---
 
@@ -251,7 +249,7 @@ Application Insights 的管理对象分为三类：
 - **Copilot 可执行**：Web App 代码与部署脚本、Azure 资源查询、PDF 目录约定、轻量级检索实现、APIM 配置脚本。
 - **可能需要用户操作**：如果创建 Web App、配置应用设置或补充 AOAI / Blob / App Service 权限需要 Portal 授权，由用户按步骤完成。
 - **产物**：RAG Service 需求设计、Web App 代码、PDF 目录约定、APIM `/rag` 配置、App Insights 遥测字段说明。
-- **注意**：本步骤只建设 RAG 服务，不包含消费端应用；Tier 1 Consumer App 在步骤 9 中开发。
+- **注意**：本步骤只建设 RAG 服务，不包含消费端应用；Tier 1 Consumer App 在步骤 7 中开发。
 
 ### 步骤 3：Foundry 原生模型部署（已完成）
 
@@ -268,13 +266,13 @@ Application Insights 的管理对象分为三类：
 - **Copilot 可执行**：资源查询、调用验证、部署脚本草案、模型清单文档。
 - **可能需要用户操作**：模型部署配额、区域选择或 Portal 内模型部署授权。
 - **产物**：步骤 3 专用需求设计文档、模型 deployment 清单、验证命令、报表对象映射。
-- **当前状态（2026-05-14）**：`AIGovernTrustworthyDemoNativeModel` 已完成直连验证；APIM `/native-model` 已配置；APIM MSI 已获 AOAI 访问角色；API-level App Insights diagnostics 已启用；AOAI 平台诊断日志已验证可见 deployment / model / version。
+- **当前状态（2026-05-17 → 已更新）**：旧 deployment `AIGovernTrustworthyDemoNativeModel` 已删除；当前 live deployment 为 `aigoverntrustworthyfoundry` account 下的 `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini` `2026-03-17`）；APIM `/native-model` 已切换到 cognitiveservices 直连路径，MSI scope 为 `https://cognitiveservices.azure.com`；实测返回 200，模型标识 `gpt-5.4-mini-2026-03-17`。
 
 ### 步骤 4：Foundry fine-tune 模型
 
 > 详细需求设计见：`docs/design-L3-domain-4-foundry-finetune-model.md`
 
-- **当前状态（2026-05-15）**：步骤 4 已完成自动化闭环：`aigoverntrustworthydemo-finetune` container 已创建，5000 行 AI Governance 训练 JSONL 已生成并归档到 `docs/finetune-qa-archive/`，训练文件已上传到 Storage；fine-tune job `ftjob-ae456ec3dc4d468b87ecb8512ad33f86` 已在 `aigoverntrustworthyfoundry` account endpoint 上成功完成，并生成 fine-tuned model `gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo`；deployment `AIGovernTrustworthyDemoFineTuneModel` 已创建；APIM `/finetune-model` 已配置并完成烟测。早先 `invalidPayload: The specified base model does not support fine-tuning.` 已确认为自动化调用缺少 `trainingType=GlobalStandard` 且 endpoint 选择不一致导致。
+- **当前状态（2026-05-17）**：步骤 4 已完成自动化闭环：`aigoverntrustworthydemo-finetune` container 已创建，5000 行 AI Governance 训练 JSONL 已生成并归档到 `docs/finetune-qa-archive/`，训练文件已上传到 Storage；fine-tune job `ftjob-ae456ec3dc4d468b87ecb8512ad33f86` 已在 `aigoverntrustworthyfoundry` account endpoint 上成功完成，并生成 fine-tuned model `gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo`；deployment `AIGovernTrustworthyDemoFineTuneModel` 已创建；APIM `/finetune-model` 已切换到 `AIGovernTrustworthyRAGProject/openai/v1` project-backed 路径，并已验证带 `model` 和不带 `model` 的两种请求形态都返回 200。早先 `invalidPayload: The specified base model does not support fine-tuning.` 已确认为自动化调用缺少 `trainingType=GlobalStandard` 且 endpoint 选择不一致导致。
 - **执行约束（2026-05-14）**：步骤 4 的正式实施固定为**全程 AI 自动化**；除用户已明确批准的 3 个创建动作外，AI 不得创建或删除其他云资源。当前已批准：在 `aigoverntrustworthysa` 下创建 `aigoverntrustworthydemo-finetune` container、创建 fine-tune job、创建 `AIGovernTrustworthyDemoFineTuneModel` deployment；并允许使用 SPN 为所需账号授权。训练文件上传必须复用 `.env.local.L4` 中现有 storage 变量，中间 Q&A 还需在 `docs/finetune-qa-archive/` 下保留一份归档副本。
 
 1. 明确 fine-tune 的测试目标：只为 Domain 4 测试提供一个可治理对象，不追求业务效果最大化。
@@ -299,84 +297,126 @@ Application Insights 的管理对象分为三类：
 6. 在 VM 模型服务自身集成 App Insights / OpenTelemetry，承接 `traceparent` 并记录统一字段。
 7. 配置 systemd / supervisor 启动服务。
 8. 验证 API 在内网可访问，并确认 App Insights 中可查询到 trace 记录。
+9. 在可代理场景下将 VM API 放到 APIM 后面，由 APIM 承接平台 tracing。
+10. VM 服务自身只负责轻量遥测与 trace 承接，不在服务内嵌入 shared-observability；对 VM 模型的完整 `input` / `output` / `metadata` evidence 统一由后续调用方（Tier 1 / Evaluation / PyRIT / connector 脚本）写入 Blob archive 与 App Insights。
 
 - **Copilot 可执行**：VM 检查脚本、安装脚本、API 服务代码、启动服务配置。
 - **可能需要用户操作**：如果需要 SSH 登录、开端口、分配 GPU、调整 NSG，需要用户协助或授权登录 session。
 - **产物**：VM 部署设计、安装脚本、API 代码、服务配置、App Insights 遥测设计、验证命令。
 
-### 步骤 6：VM 调用链观测接入（调用方 shared-observability + VM 侧 App Insights）
+### 步骤 6：Agent（Foundry 自定义 Agent + Copilot Studio Agent）
 
-1. 确认 VM API 内网地址、APIM 后端地址，以及 Blob / App Insights 连接参数。
-2. 在可代理场景下将 VM API 放到 APIM 后面。
-3. 保持 VM 模型服务自身只负责 App Insights 轻量遥测和 trace 承接，不在服务内嵌入 shared-observability。
-4. 在未来调用方（Tier 1 / Evaluation / PyRIT / connector 脚本）中接入 shared-observability，记录对 VM 模型的一次实际调用。
-5. 由调用方 evidence 保留 `trace_id`、`response_id`、`model_name`、`model_version`、`deployment_type=vm_huggingface`。
-6. 完整 `input` / `output` / `metadata` 由调用方写入 Blob archive。
-7. 验证：VM 侧 App Insights trace 可查询，调用方 Blob 与 App Insights evidence 双写成功，并可通过 `trace_id` 关联。
+> 详细需求设计见：`docs/design-L3-domain-4-agents.md`
 
-- **Copilot 可执行**：调用方 observability helper 接入、VM 侧遥测字段对齐、验证脚本、KQL 查询、Blob 校验脚本。
-- **可能需要用户操作**：如果 VM 网络或权限不足，需要用户协助或授权。
-- **产物**：调用方 observability 接入代码、VM 侧字段映射、验证脚本。
+本步骤一次性完成两类 Agent 的建设与纳管，但两者在治理口径上仍保持独立 target type，不合并统计。
 
-### 步骤 7：Foundry 自定义 Agent
+- **当前设计状态（2026-05-17）**：步骤 6 的 Foundry Agent 部分已完成设计、资源确认和 APIM `/foundry-agent` 接入；可作为步骤 7 Tier 1 / Tier 2 的下游 target。Copilot Studio Agent 已创建并选择 `SalesTeamSite` 作为知识源，但发布仍被正式 Copilot Studio license 阻塞，因此 Copilot Studio / Direct Line / APIM `/copilot-studio` 收尾仍暂停。
+- **官方文档依据（2026-05-17）**：Microsoft Learn `Assign licenses and manage access to Copilot Studio` 明确要求同时具备 `Copilot Studio` tenant license 与 `Copilot Studio User License`；trial license 可创建和测试 agent，但不能 publish。当前 tenant 仅发现 `CCIBOTS_PRIVPREV_VIRAL` trial SKU，不能满足发布前置。
+- **当前已确认的方案**：
+  - Foundry Agent：复用现有 AOAI model deployment，在 Foundry 中创建一个 Agent，并上传现有 5 份 AI Governance PDF，使其可基于这 5 份材料回答问题。
+  - Copilot Studio Agent：采用最简单可落地方案，创建一个 Agent，使其可读取同 tenant 的 SharePoint site `SalesTeamSite` 上指定文件的信息并回答问题。
+  - 两个 Agent 自身都**不要求接入 shared-observability 或写 Blob 级 LLM evidence**；步骤 6 先依赖平台侧日志与 APIM tracing。后续如 Tier 1、evaluation runner、PyRIT runner 调用这两个 Agent，则调用方仍需按统一规范记录 Agent API evidence。
+  - 两个 Agent 的外部 API 都必须挂到 APIM 后端；不接受长期绕开 APIM 的直连方案。
+  - Foundry Agent 应优先启用平台原生 tracing，并自动把平台日志送到 App Insights；Copilot Studio Agent 若存在可用的 App Insights / Azure Monitor 集成能力，则应尽量配置，否则至少保留 APIM tracing + 调用方 evidence。
 
-1. 明确 Agent 的最小场景，例如基于治理知识库的问答 Agent。
-2. 在 Azure AI Foundry 创建 Agent project / Agent。
-3. 绑定可用模型和知识源（可复用 RAG Service 知识材料）。
-4. 发布 Agent 并获取可调用 endpoint 或 invocation 方式。
-5. 在可代理场景下通过 APIM 暴露 Agent invocation endpoint，并开启 Foundry tracing。
-6. 验证 Agent 可被外部脚本调用。
-7. 记录 Agent id、endpoint、project、模型信息，作为独立报表对象。
+1. 明确两类 Agent 的最小场景：
+   - Foundry 自定义 Agent：基于现有 AOAI deployment 和 5 份 AI Governance PDF 的知识问答 Agent。
+   - Copilot Studio Agent：可读取同 tenant SharePoint site `SalesTeamSite` 指定文件信息的最小知识型 Agent。
+2. Foundry Agent 的固定知识源为以下 5 个文档，不再抽象写作“可复用 RAG Service 知识材料”：
+   - `NIST.AI.100-1.pdf`
+   - `NIST.AI.600-1.pdf`
+   - `OJ_L_202401689_EN_TXT.pdf`
+   - `OWASP-Top-10-for-LLMs-v2025.pdf`
+   - `sgmodelaigovframework2.pdf`
+3. 在 Azure AI Foundry 中创建 Foundry Agent 时，必须复用步骤 3/4 已存在的 AOAI model deployment，不再为步骤 6 额外新建平行模型资源；并把上述 5 份 PDF 作为 Agent knowledge source 上传到 Foundry。
+4. 在 Copilot Studio 中创建最小自定义 Agent 时，优先采用最简单的 tenant 内知识接入方式，使 Agent 可读取 SharePoint site `SalesTeamSite` 上目标文件的信息并完成问答；当前以用户提供的目标文件链接为实施锚点。
+5. 为 Foundry Agent 获取可调用 endpoint 或 invocation 方式，并通过 APIM `/foundry-agent` 暴露为统一治理入口；在平台支持的路径开启 Foundry tracing，并确保日志进入 App Insights / Azure Monitor 查询面。
+6. 为 Copilot Studio Agent 启用可被外部调用的通道，当前默认优先 Direct Line；并通过 APIM `/copilot-studio` 暴露为统一治理入口，保留 bot id、environment id、channel / connector 信息。
+7. 分别验证 Foundry Agent 与 Copilot Studio Agent 可被外部脚本调用，并验证经 APIM 调用时可以在 App Insights 中查询到对应平台日志或平台侧证据。
+8. 两类 Agent 的日志边界固定如下：
+   - Foundry Agent：不要求 Agent 自身接入 shared-observability；依赖 Foundry tracing + App Insights / Azure Monitor 自动日志 + APIM tracing。
+   - Copilot Studio Agent：不要求 Agent 自身接入 shared-observability；若产品能力允许则尽量接入 App Insights / Azure Monitor，否则依赖 APIM tracing，后续再由调用方补齐 evidence。
+9. 两类 Agent 的 Entra 运行身份与授权原则固定如下：
+   - Foundry Agent：当前**不把“绑定任意自定义 SPN 作为 Agent runtime principal”视为默认可行方案**。正式设计基线是优先使用 Foundry Project / Agent 平台管理身份，或 Agent 所依赖 connection 的实际运行身份；若后续产品能力证明确实支持绑定指定 SPN，再作为增量设计补充。
+   - Copilot Studio Agent：当前**不把“绑定任意自定义 SPN 作为 Copilot Studio Agent runtime principal”视为默认可行方案**。访问 SharePoint 知识源时，优先基于 Copilot Studio / Power Platform connection 的实际身份运行；如不支持 app-only/SPN，则使用专用 Entra 用户账户或 service account 作为 connection owner，并授予目标 SharePoint site / 文件读取权限。
+   - 因此，步骤 6 的重点不是先创建两个新的运行时 SPN，而是先识别这两个 Agent 在租户内真正使用的后台身份，再把相应读权限 / 模型调用权限赋给该身份。
+10. 实际创建完成后，必须分别记录：
+   - Foundry Agent：agent id、project、endpoint / run API、复用的 model deployment、knowledge file 清单、平台实际运行身份或 connection 身份、App Insights / tracing 配置状态
+   - Copilot Studio Agent：bot id、environment id、Direct Line / connector 信息、SharePoint site / 文件来源、connection owner 身份、App Insights / tracing 配置状态
+11. 与 Domain 1 Dataverse `bots` 资产发现结果对齐，并把两类 Agent 作为独立报表对象纳管。
+12. 实施前的关键前置条件如下：
+   - Foundry Agent：既有 Foundry Project 可访问、既有 AOAI deployment 可复用、5 个 PDF 已准备齐全、APIM MSI 具备或可补齐 Foundry 数据面访问权限、创建后回填 `L4_FOUNDRY_AGENT_ID`
+   - Copilot Studio Agent：Copilot Studio 环境可创建 Agent、`SalesTeamSite` 目标文件可访问、knowledge connection 的实际身份已确认并具备 SharePoint 读取权限、Direct Line 可启用并回填 `L4_COPILOT_STUDIO_DIRECTLINE_SECRET`
+13. 当前已确认的 Foundry Agent 实施结果如下：
+   - Agent 名称 = `AIGovernTrustworthyDemoFoundryAgent`
+   - `agent_id = asst_qPEQxZ6Gc894gcxQjaIOkdF6`
+   - 实际创建 project = `AIGovernTrustworthyRAGProject`
+   - model deployment = `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini` `2026-03-17`）
+   - 旧 Hosted Agent `aigovern-rag-agent` 已删除；deploy SPN 视角下 `/agents` 列表为空，`/assistants` 列表仅包含上述 Foundry Agent
+   - APIM `/foundry-agent` 已接到 `AIGovernTrustworthyRAGProject` project-level assistants / threads / messages / runs API，并已完成端到端 smoke test
+   - Project UI 可见 tracing / monitoring / diagnostics 入口；真实调用已能通过 APIM 完成，平台 trace 查询仍以后续 dashboard / evidence 联调为准
+14. 当前已确认的 Copilot Studio 实施 / 阻塞结果如下：
+   - Agent 名称 = `AIGovernTrustworthyDemoCopilotStudioAgent`
+   - Environment = `Default-7d3389c6-5b33-43be-b0fd-d7c303755fb5` / `Contoso (default)`
+   - Dataverse URL = `https://org1fb702ee.crm.dynamics.com/`
+   - UI 已接受 `SalesTeamSite` 站点级知识源选择；未暴露单文件 URL 字段或 connection owner 字段
+   - 当前作者 `weishi@MngEnvMCAP029189.onmicrosoft.com` 已具备 `Basic User`、`Environment Maker`、`Bot Author`
+   - `Bot Author` 通过已有 Dataverse System Administrator application user `devdeployspn` / `AZ_DEPLOY_CLIENT_ID` 分配并验证
+   - Publish 仍阻塞于正式 Copilot Studio license；Direct Line secret 尚未生成
+   - 结论：Copilot Studio Agent POC 当前到此为止；等待 license 补齐与用户后续指令后再继续 Direct Line 与 `/copilot-studio` 收尾
 
-- **Copilot 可执行**：需求设计、调用验证脚本、Agent 清单文档。
-- **可能需要用户操作**：Foundry Portal 中创建 / 发布 Agent 如无法脚本化，由用户按步骤完成。
-- **产物**：Agent 设计说明、调用示例、纳管清单。
+- **Copilot 可执行**：需求设计、调用验证脚本、Agent 清单文档、Dataverse 发现对齐脚本。
+- **可能需要用户操作**：
+  - Foundry Portal 中创建 / 发布 Agent、上传知识文件、确认平台 tracing / monitoring，如无法脚本化，由用户按步骤完成。
+   - Copilot Studio UI 创建、发布、知识源连接、Direct Line 开启通常需要用户在 UI 中完成；其中 publish 需要先补齐正式 Copilot Studio tenant / user license。
+  - 若产品界面中无法明确看到后台运行身份或 connection owner，需要用户配合在 Portal / Power Platform 管理界面确认实际身份。
+- **产物**：Foundry Agent 清单、Copilot Studio Agent 端点记录、调用验证脚本、纳管清单、运行身份 / 授权说明。
 
-### 步骤 8：Copilot Studio Agent
+### 步骤 7：Consumer Apps（Tier 1 + Tier 2）
 
-1. 在 Copilot Studio 创建最小自定义 Agent。
-2. 配置知识源或 topic，使其能回答固定治理问题。
-3. 发布 Agent。
-4. 启用可被外部调用的通道，例如 Direct Line 或 Custom Connector。
-5. 获取 endpoint、bot id、环境 id，并验证脚本可调用。
-6. 与 Domain 1 Dataverse `bots` 资产发现结果对齐，作为独立报表对象。
+> 详细需求设计见：`docs/design-L3-domain-4-consumer-apps.md`
 
-- **Copilot 可执行**：调用验证脚本、Dataverse 发现对齐脚本、记录字段设计。
-- **必须用户操作**：Copilot Studio UI 创建、发布、通道开启通常需要用户在 UI 中完成。
-- **产物**：UI 操作指南、Agent 端点记录、调用验证脚本。
+本步骤一次性完成 Tier 1 与 Tier 2 两类 Consumer App 的整体设计与开发，但两者在治理口径上仍保持独立 target type，不合并统计。
 
-### 步骤 9：Tier 1 Consumer App
+#### 7.1 Tier 1 Consumer App
 
 代表"合规使用 AI 服务"的标准消费者应用。调用 RAG Service、Foundry 原生模型、Foundry fine-tune 模型、VM Hugging Face 模型、Foundry Agent、Copilot Studio Agent 等全部 AI 服务后端。
 
-1. 设计 Tier 1 App 的 API 接口：`POST /query`（接收用户请求并路由到对应 AI 服务）；`GET /health`；`GET /metadata`。
+0. Tier 1 是一个包含前端、前端对应后端和独立 API 的网页程序；前端与独立 API 可由同一个 FastAPI 应用承载。
+1. 设计 Tier 1 App 的 API 接口：按 tab 分离的 forwarding API（例如 `POST /api/chat/rag`、`POST /api/chat/native-model` 等）；同时提供 `GET /health`、`GET /ui/bootstrap`。
 2. 在接收请求时继承平台 trace 上下文，不要求自建 `correlation_id`。
-3. 对每类 AI 服务分别实现 connector：RAG Service、Foundry endpoint、VM Hugging Face endpoint、Foundry Agent、Copilot Studio Direct Line。
+3. 对当前 5 类目标分别实现独立 forwarding route：RAG Service、Foundry Agent、VM Hugging Face endpoint、Foundry Native Model、Foundry Fine-tune Model。
 4. 对所有可代理的下游调用统一改为走 APIM。
 5. 在每次实际 LLM 调用后记录 `trace_id`、`response_id`、`model_name`、`model_version`、`target_type`、`target_id`、`citations`（若调用 RAG），并写 Blob evidence。
 6. 将 Tier 1 App 部署到 App Service，并接入 shared-observability。
-7. 验证从外部调用 Tier 1 可成功触发下游 AI 服务，并确认 APIM / Foundry / Python evidence 三层链路完整。
+7. Native Model 与 Fine-tune Model 在底层仍属于 AOAI deployment，但步骤 7 的 consumer app 需求要求优先通过 `AIGovernTrustworthyRAGProject` project endpoint 调用，以利用该 Project 的 tracing 能力。
+8. 验证从外部调用 Tier 1 可成功触发下游 AI 服务，并确认 APIM / Foundry / Python evidence 三层链路完整。
+9. Tier 1 前端页面与外部程序调用其独立 API 时，若二者都能发起下游调用，则两条入口路径都必须满足同样的 evidence 记录要求。
+10. 对 VM Hugging Face 模型的调用由 Tier 1 forwarding route 负责写入 `input` / `output` / `metadata` evidence，并保留 `trace_id`、`response_id`、`model_name`、`model_version`、`target_type=vm_huggingface_model`、`target_id`。
 
-- **Copilot 可执行**：接口设计、connector 代码、遥测 helper、Blob / App Insights 写入代码、部署脚本。
+- **Copilot 可执行**：接口设计、forwarding 代码、遥测 helper、Blob / App Insights 写入代码、部署脚本。
 - **可能需要用户操作**：如 AI 服务 endpoint 权限不足，需要用户授权。
-- **产物**：Tier 1 App 需求设计、API 代码、connector 代码、遥测 helper、部署脚本。
+- **产物**：Tier 1 App 需求设计、API 代码、forwarding 代码、遥测 helper、部署脚本。
 
-### 步骤 10：Tier 2 Consumer App
+#### 7.2 Tier 2 Consumer App
 
 代表通过"AI 服务平台层"间接调用 AI 的上游业务应用。Tier 2 不直接调用 AI 服务，只调用 Tier 1，体现"间接 AI 使用"的治理追踪场景。
 
-1. 设计 Tier 2 App 的 API 接口：`POST /request`（接收用户输入并转发到 Tier 1）；`GET /health`；`GET /metadata`。
+0. Tier 2 是一个包含前端和前端对应后端的网页程序；其前后端由同一个 FastAPI 应用承载。
+1. 设计 Tier 2 App 的 API 接口：按 tab 分离的 forwarding API（例如 `POST /api/chat/rag`、`POST /api/chat/native-model` 等）；同时提供 `GET /health`、`GET /ui/bootstrap`。
 2. 在接收请求时继承平台 trace 上下文，不要求自建 `correlation_id`。
 3. 通过 APIM 暴露的 Tier 1 endpoint 调用 Tier 1，并透传当前 trace context。Tier 1 与 Tier 2 都必须保留平台 trace 关联能力。
-4. 在 Tier 2 自身请求前后写入 App Insights 原生遥测；对于真正发生的 LLM 调用，由下游 Python 代码写 Blob evidence。
+4. 在 Tier 2 自身请求前后写入 App Insights 原生遥测；Tier 2 后端在调用 Tier 1 API 时，也必须调用 shared-observability，把这条间接 AI 使用入口调用写入 Blob evidence 与 App Insights thin event。
 5. 将 Tier 2 App 部署到 App Service。
 6. 验证：通过 KQL 可以从 Tier 2 请求的 `trace_id` 追踪到最终 AI 服务调用（Tier 2 / APIM / Tier 1 / Foundry 或 VM evidence），证明间接 AI 使用可追溯。
+7. Tier 2 前端页面触发的调用必须与 Tier 2 后端写出的 evidence 对齐，不能把“前端发起页面请求”和“后端调用 Tier 1 API”混成一条无法区分的记录。
+8. Tier 2 -> Tier 1 服务间调用固定使用 app-only token，而不是透传浏览器用户 token；对应的 Entra API exposure、权限授予与 admin consent 属于实现前置条件。
 
 - **Copilot 可执行**：接口设计、转发代码、遥测 helper、部署脚本、KQL 验证查询。
 - **可能需要用户操作**：如果 App Service 权限不足，需要用户授权。
 - **产物**：Tier 2 App 需求设计、API 代码、部署脚本、KQL 追踪验证查询。
 
-### 步骤 11：App Insights 遥测字段配置
+### 步骤 8：App Insights 遥测字段配置
 
 1. 按 §2.4.3 定义统一字段：`trace_id`、`span_id`、`response_id`、`model_name`、`model_version`、`target_type`、`target_id`、`payload_ref`。
 2. 在 shared-observability 写出的 evidence 事件中，优先使用贴近 Foundry / OTel 的字段命名。
@@ -387,7 +427,7 @@ Application Insights 的管理对象分为三类：
 - **可能需要用户操作**：如果 App Insights 权限不足，需要用户授权。
 - **产物**：遥测字段规范、代码 helper、KQL 验证语句。
 
-### 步骤 12：Foundry Tracing 能力
+### 步骤 9：Foundry Tracing 能力
 
 1. 确认哪些目标支持 Foundry Tracing：Foundry 原生模型、fine-tune 模型、Foundry Agent。
 2. 在 Foundry 项目中开启 tracing / monitoring。
@@ -399,7 +439,7 @@ Application Insights 的管理对象分为三类：
 - **可能需要用户操作**：Foundry Portal 中开启 tracing 或连接资源。
 - **产物**：Tracing 配置说明、验证查询、适用范围表。
 
-### 步骤 13：Foundry Evaluations 能力
+### 步骤 10：Foundry Evaluations 能力
 
 1. 设计 evaluation target schema：target type、endpoint、auth、input、expected behavior。
 2. 为 RAG Service、Foundry 原生模型、fine-tune 模型、Foundry Agent、Copilot Studio Agent、VM Hugging Face 模型分别建立 target 记录。
@@ -407,24 +447,13 @@ Application Insights 的管理对象分为三类：
 4. 配置 groundedness / citation / safety evaluator。
 5. 运行一次评估并导出结果。
 6. 将结果字段映射到 Domain 4 指标。
+7. 对 VM Hugging Face 模型的 evaluation 调用，通过 shared-observability 补写 Blob evidence 与 App Insights evidence，并与 VM 服务 trace 通过 `trace_id` 关联。
 
 - **Copilot 可执行**：target 配置文件、评估数据集样例、运行脚本、结果解析脚本。
 - **可能需要用户操作**：Foundry UI 中创建 evaluation 或授权 evaluator。
 - **产物**：evaluation 需求设计、target 清单、样例数据集、结果解析脚本。
 
-### 步骤 14：Azure DevOps Work Items
-
-1. 确认 Azure DevOps organization / project。
-2. 设计 work item 类型、tag、severity、target_type、target_id 字段使用方式。
-3. 创建或确认用于 red teaming / evaluation findings 的查询和 board。
-4. 编写脚本，将 evaluation / PyRIT 结果写入 Work Items。
-5. 验证 high / critical 未关闭发现可查询。
-
-- **Copilot 可执行**：ADO REST 脚本、work item 创建脚本、查询脚本。
-- **可能需要用户操作**：如果 PAT / OAuth / project 权限不足，需要用户授权。
-- **产物**：ADO 字段设计、写入脚本、查询脚本。
-
-### 步骤 15：Red Teaming 环境（PyRIT）
+### 步骤 11：Red Teaming 环境（PyRIT）
 
 1. 选择执行环境：本地、开发 VM、GitHub Actions 或 Azure VM。
 2. 安装 PyRIT 和必要依赖。
@@ -432,13 +461,13 @@ Application Insights 的管理对象分为三类：
 4. connector 默认调用 target registry 记录的 endpoint；统一通过 shared-observability 写入证据链。
 5. 准备最小攻击场景集。
 6. 执行 smoke test，确认每类目标可调用。
-7. 将结果写入 Application Insights 和 Azure DevOps Work Items。
+7. 将结果写入 Application Insights，作为后续状态语义与报表映射的数据来源。
 
-- **Copilot 可执行**：PyRIT 环境脚本、connector 代码、最小攻击集、ADO 写入脚本。
+- **Copilot 可执行**：PyRIT 环境脚本、connector 代码、最小攻击集、结果解析脚本。
 - **可能需要用户操作**：目标 endpoint 权限、Copilot Studio 通道密钥、网络访问授权。
 - **产物**：PyRIT 配置、connector 代码、攻击集、结果写入脚本。
 
-### 步骤 16：指标状态语义定义
+### 步骤 12：指标状态语义定义
 
 1. 定义 `N/A`、`Not Configured`、`No Data`、真实 `0` 的差异。
 2. 为每个指标指定适用对象和不适用对象。
@@ -449,7 +478,7 @@ Application Insights 的管理对象分为三类：
 - **可能需要用户操作**：确认业务接受的风险阈值。
 - **产物**：状态语义表、阈值规则、API 字段定义。
 
-### 步骤 17：首页与二级页指标映射校准
+### 步骤 13：首页与二级页指标映射校准
 
 1. 对照 `design-L2-domain-4-output-trustworthiness.md` 更新 L1/L2 指标映射。
 2. 明确首页显示 `Grounded Response Rate` 和 `Model Identity Capture Gaps` 的数据来源。

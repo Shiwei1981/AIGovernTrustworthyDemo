@@ -6,7 +6,7 @@
 
 步骤 4 在本项目中的定位，不是为了追求一个“更强”的业务模型，而是建立一个能够被 Domain 4 持续纳管的 **Foundry Fine-tune Model target**，用于验证模型调优后的治理对象是否也能被单独追踪、评测、红队测试和纳入报表。
 
-> **当前状态（2026-05-15）**：步骤 4 已完成自动化闭环。已完成：在 `aigoverntrustworthysa` 中创建 `aigoverntrustworthydemo-finetune` container、生成并归档 5000 行训练 JSONL（`docs/finetune-qa-archive/aigoverntrustworthydemo-qa-5000.jsonl`）、将训练文件上传到 Storage、在 `aigoverntrustworthyfoundry` account endpoint 上创建 fine-tune job `ftjob-ae456ec3dc4d468b87ecb8512ad33f86`、得到平台 fine-tuned model `gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo`、创建 deployment `AIGovernTrustworthyDemoFineTuneModel`、完成直连烟测、并配置 APIM `/finetune-model` 与 diagnostics。早先 `invalidPayload: The specified base model does not support fine-tuning.` 的根因不是 `gpt-4.1` 不支持，而是自动化调用缺少官方要求的 `trainingType=GlobalStandard` 参数且 endpoint 选择不一致；当前固定使用 `gpt-4.1-2025-04-14` + `trainingType=GlobalStandard`。后续实施固定为**自动化优先且不依赖 Portal 手工操作**；除用户已明确批准的 3 个例外外，AI 不得创建或删除其他类型云资源。当前已获批准的例外为：`aigoverntrustworthysa` 下的 fine-tune container、fine-tune job、`AIGovernTrustworthyDemoFineTuneModel` deployment；并允许使用 SPN 为所需账号授权。
+> **当前状态（2026-05-17）**：步骤 4 已完成自动化闭环。已完成：在 `aigoverntrustworthysa` 中创建 `aigoverntrustworthydemo-finetune` container、生成并归档 5000 行训练 JSONL（`docs/finetune-qa-archive/aigoverntrustworthydemo-qa-5000.jsonl`）、将训练文件上传到 Storage、在 `aigoverntrustworthyfoundry` account endpoint 上创建 fine-tune job `ftjob-ae456ec3dc4d468b87ecb8512ad33f86`、得到平台 fine-tuned model `gpt-4.1-2025-04-14.ft-ae456ec3dc4d468b87ecb8512ad33f86-aigovtrustdemo`、创建 deployment `AIGovernTrustworthyDemoFineTuneModel`、完成直连烟测、并配置 APIM `/finetune-model` 与 diagnostics。2026-05-17 已进一步把 APIM `/finetune-model` 切换到 `AIGovernTrustworthyRAGProject/openai/v1` project-backed 路径，认证 scope 改为 `https://ai.azure.com`，并验证带 `model` 与不带 `model` 的两种请求形态都返回 200。早先 `invalidPayload: The specified base model does not support fine-tuning.` 的根因不是 `gpt-4.1` 不支持，而是自动化调用缺少官方要求的 `trainingType=GlobalStandard` 参数且 endpoint 选择不一致；当前固定使用 `gpt-4.1-2025-04-14` + `trainingType=GlobalStandard`。后续实施固定为**自动化优先且不依赖 Portal 手工操作**；除用户已明确批准的 3 个例外外，AI 不得创建或删除其他类型云资源。当前已获批准的例外为：`aigoverntrustworthysa` 下的 fine-tune container、fine-tune job、`AIGovernTrustworthyDemoFineTuneModel` deployment；并允许使用 SPN 为所需账号授权。
 
 **关联文档**：
 
@@ -18,6 +18,7 @@
 | `docs/design-L2-domain-4-prerequisites.md` | 上级步骤列表；步骤 4 的总入口 |
 | `docs/design-L2-domain-4-prerequisites-lowleveldesign.md` | fine-tune 数据、存储、变量、资源与 job/deployment 锚点 |
 | `docs/design-L2-domain-4-output-trustworthiness.md` | 约束步骤 4 必须支撑的 Domain 4 指标与证据字段 |
+| `docs/design-L3-domain-4-monitoring-tracing-logging.md` | Domain 4 monitoring / tracing / logging 主规范 |
 | `docs/design-L3-domain-4-apim.md` | 约束 `/finetune-model` APIM 入口、认证与 tracing 方式 |
 | `docs/design-L3-domain-4-shared-observability-component.md` | 约束 Python 调用方如何记录 `foundry_finetune_model` 证据 |
 | `docs/design-L3-domain-4-foundry-native-model.md` | 提供与步骤 3 相同的设计粒度与对照基线 |
@@ -54,7 +55,9 @@
 3. **训练事实如何记录**：job id、基础模型、训练文件、输出模型、deployment 名称如何形成可审计事实。
 4. **调用入口在哪里**：既要能直连 fine-tuned deployment 验证，也要具备 APIM `/finetune-model` 的统一入口。
 5. **治理身份是什么**：必须有固定 `target_id` / `target_type` / `model_name` / `model_version`，并进入 target registry。
-6. **后续怎么复用**：必须能被步骤 9/10 的 Consumer App、步骤 13/15 的 evaluation / red teaming 和 L1/L2 报表复用。
+6. **后续怎么复用**：必须能被步骤 7 的 Consumer Apps、步骤 10/11 的 evaluation / red teaming 和 L1/L2 报表复用。
+
+**2026-05-17 补充确认**：`AIGovernTrustworthyDemoFineTuneModel` 的底层 deployment 仍然运行在 AOAI / Foundry account 上，但已用 deploy SPN + `AIProjectClient` 验证：`AIGovernTrustworthyRAGProject` project endpoint 可以直接调用该模型。因此，步骤 7 Consumer App 的需求基线是优先通过该 Project 入口调用 Fine-tune Model，以利用 Project tracing；AOAI deployment 直连继续保留为底层烟测与排障路径。
 
 ---
 
@@ -76,7 +79,7 @@
 
 | 项目 | 当前 draft |
 |---|---|
-| Q&A generation model | `gpt-5.4-nano`（现有 native deployment） |
+| Q&A generation model | `gpt-5.4-mini`（当前 native deployment `AIGovernTrustworthyDemoNativeModelGPT5.4mini`） |
 | fine-tune base model | `gpt-4.1` |
 | training theme | AI Governance |
 | source corpus | 用户上传的 5 个 AI Governance PDF |
@@ -127,8 +130,8 @@
 7. 问答对需要尽量覆盖 5 个 PDF 的全部内容，不能只围绕少数高频主题重复生成。
 8. 训练文件上传所用 Storage Account / Container 必须以 `.env.local.L4` 中现有变量为准，不额外引入平行存储配置：
    - `L4_STORAGE_ACCOUNT_NAME`
-   - `L4_STORAGE_CONNECTION_STRING`
    - `L4_STORAGE_CONTAINER_FINETUNE`
+   - `L4_STORAGE_CONNECTION_STRING` 仅作为 legacy key-based 脚本兼容项保留；当前 shared-observability / Web App 运行时不依赖它
 9. 训练文件的受控存储位置固定为：
    - Storage Account：`aigoverntrustworthysa`
    - Container：`aigoverntrustworthydemo-finetune`
@@ -136,7 +139,7 @@
 10. 除上传到 Storage 外，问答对中间产物还必须在仓库设计文档目录保留一份归档副本：
    - 仓库路径：`docs/finetune-qa-archive/aigoverntrustworthydemo-qa-5000.jsonl`
    - 用途：设计留档与离线审阅，不替代 Storage 中的受控训练文件
-11. 问答对生成阶段优先复用已存在的 native model `AIGovernTrustworthyDemoNativeModel`（`gpt-5.4-nano`），这样步骤 3 的原生模型成为步骤 4 的问答对生成器。
+11. 问答对生成阶段优先复用已存在的 native model `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini`），这样步骤 3 的原生模型成为步骤 4 的问答对生成器。
 12. 训练阶段至少要形成以下事实记录：
    - `fine_tune_job_id`
    - `base_model_name`
@@ -160,7 +163,7 @@
 1. 步骤 4 必须基于**Azure 托管、可 fine-tune、文本类**基础模型。
 2. fine-tune 目标必须落在当前已批准的 Domain 4 Foundry / AOAI 资源范围内；当前实测可创建 job 的资源是 `aigoverntrustworthyfoundry` account endpoint，而不是旧的 `AIGovernTrustworthyAOAI` endpoint。
 3. 当前 design 已明确区分两个模型角色：
-   - **Q&A generation model**：`gpt-5.4-nano`
+   - **Q&A generation model**：`gpt-5.4-mini`（deployment `AIGovernTrustworthyDemoNativeModelGPT5.4mini`）
    - **fine-tune base model**：`gpt-4.1`
 4. 在进入实际训练前，仍必须核实：
    - 当前 region / subscription / automation API 是否支持 `gpt-4.1` fine-tune
@@ -244,7 +247,7 @@
 步骤 4 当前固定采用**自动化**方案，而不是 UI 手工路径。自动化脚本允许执行当前已批准的 3 个创建动作（fine-tune container、fine-tune job、fine-tuned deployment），其余云资源仍不得创建或删除。最小自动化闭环应包含以下 7 个切片：
 
 1. **PDF -> 文本预处理**：从用户上传的 AI Governance PDF 中提取可送入 Q&A 生成模型的正文。
-2. **Q&A 生成**：调用现有 native deployment `AIGovernTrustworthyDemoNativeModel`，批量生成 5000 个高质量问答对。
+2. **Q&A 生成**：调用现有 native deployment `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini`），批量生成 5000 个高质量问答对。
 3. **JSONL 组装与质检**：将问答对整理为 Azure OpenAI chat completion JSONL，并做去重、抽样和格式校验。
 4. **训练文件上传**：将 `aigoverntrustworthydemo-qa-5000.jsonl` 上传到 `aigoverntrustworthysa / aigoverntrustworthydemo-finetune`。
 5. **fine-tune job 提交与轮询**：通过 Azure CLI / REST 提交 fine-tune job，并轮询直到完成。
@@ -268,19 +271,19 @@
 
 1. **APIM**：步骤 4 完成后必须补齐 `/finetune-model`，否则不符合“所有可代理 HTTP hop 统一走 APIM”的宪章要求。
 2. **Target Registry**：必须确保 `infra/target-registry/targets.json` 中 fine-tune 条目与真实训练/部署结果保持一致。
-3. **Evaluation Runner**：步骤 4 交付后，fine-tune 模型必须能被步骤 13 纳入独立评测目标。
-4. **PyRIT / Red Teaming**：步骤 4 交付后，fine-tune 模型必须能被步骤 15 作为独立目标测试，而不是复用原生模型结果。
+3. **Evaluation Runner**：步骤 4 交付后，fine-tune 模型必须能被步骤 10 纳入独立评测目标。
+4. **PyRIT / Red Teaming**：步骤 4 交付后，fine-tune 模型必须能被步骤 11 作为独立目标测试，而不是复用原生模型结果。
 5. **Dashboard / Metrics**：步骤 4 的 target 必须能被后续 Evaluation Coverage、Safety Failure Rate、Model Identity Capture、Red Teaming Coverage 等指标单独统计。
-6. **步骤 3 原生模型**：步骤 4 默认以步骤 3 的 `AIGovernTrustworthyDemoNativeModel` 为对照基线，并复用它来生成步骤 4 所需的 5000 个问答对；但 fine-tune base model 改用 `gpt-4.1`，不再假设 native deployment 本身可直接 fine-tune。
+6. **步骤 3 原生模型**：步骤 4 默认以步骤 3 的 `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini`）为对照基线，并复用它来生成步骤 4 所需的 5000 个问答对；但 fine-tune base model 改用 `gpt-4.1`，不再假设 native deployment 本身可直接 fine-tune。
 
 ### 5.9 后续复用需求
 
 步骤 4 交付后，至少要支持以下后续动作：
 
-1. 被步骤 9 的 Tier 1 Consumer App 通过 APIM 调用。
-2. 被步骤 10 的 Tier 2 间接使用链路纳入追踪。
-3. 被步骤 13 的 Evaluation Runner 纳入 `foundry_finetune_model` 目标清单。
-4. 被步骤 15 的 PyRIT / red teaming 以统一 target 身份纳入测试。
+1. 被步骤 7 的 Tier 1 Consumer App 通过 APIM 调用。
+2. 被步骤 7 的 Tier 2 间接使用链路纳入追踪。
+3. 被步骤 10 的 Evaluation Runner 纳入 `foundry_finetune_model` 目标清单。
+4. 被步骤 11 的 PyRIT / red teaming 以统一 target 身份纳入测试。
 5. 被 Domain 4 L1/L2 报表按独立 target type 展示，不与原生模型或其他对象合并。
 
 ---
@@ -291,9 +294,9 @@
 
 1. 为了“提高业务效果”而无限扩充训练集、反复调参或做多轮实验比较。
 2. 在训练集中混入故意错误样本来替代后续独立的 evaluation / red teaming 数据集。
-3. VM Hugging Face 模型部署与 OpenAI-compatible API（属于步骤 5/6）。
-4. Foundry 自定义 Agent 或 Copilot Studio Agent 的创建（属于步骤 7/8）。
-5. Consumer App 的 UI、登录流和业务页面（属于步骤 9/10）。
+3. VM Hugging Face 模型部署与 OpenAI-compatible API（属于步骤 5；完整调用方 observability 由后续调用方步骤补齐）。
+4. Foundry 自定义 Agent 或 Copilot Studio Agent 的创建（属于步骤 6）。
+5. Consumer App 的 UI、登录流和业务页面（属于步骤 7）。
 6. 为了“先跑通”而长期绕开 APIM、App Insights、shared-observability、target registry 的临时方案。
 7. 引入未批准的新训练数据源、额外模型服务资源、或平行环境变量命名体系。
 
@@ -326,7 +329,7 @@
 4. APIM `/finetune-model` 被定义为统一治理入口，而不是停留在设计外的直连方式。
 5. `foundry_finetune_model` 的 target 身份、字段、registry 条目和后续指标口径一致。
 6. 适用时的 Foundry tracing、APIM tracing、AOAI 平台诊断、App Insights 和 Blob evidence 的责任边界清晰，不互相替代。
-7. 步骤 9、10、13、15 可以在不重做模型身份设计的前提下直接复用该 target。
+7. 步骤 7、10、11 可以在不重做模型身份设计的前提下直接复用该 target。
 8. 已明确：执行路径必须全程自动化、不走 Portal 手工路径，并且中间 Q&A 需同步归档到 `docs/finetune-qa-archive/`。
 
 ---
@@ -337,8 +340,8 @@
 
 | 类别 | 必要条件 |
 |---|---|
-| 既有 AI 资源 | `aigoverntrustworthyfoundry`、`AIGovernTrustworthyAOAI`、`AIGovernTrustworthyDemoNativeModel`、现有 APIM、现有 App Insights 必须已经存在且可查询。 |
-| Storage | `.env.local.L4` 中的 `L4_STORAGE_ACCOUNT_NAME`、`L4_STORAGE_CONNECTION_STRING`、`L4_STORAGE_CONTAINER_FINETUNE` 必须已经有效，且指向的 Storage Account / Container 已存在且可写。 |
+| 既有 AI 资源 | `aigoverntrustworthyfoundry`、`AIGovernTrustworthyDemoNativeModelGPT5.4mini`、现有 APIM、现有 App Insights 必须已经存在且可查询。 |
+| Storage | `.env.local.L4` 中的 `L4_STORAGE_ACCOUNT_NAME`、`L4_STORAGE_CONTAINER_FINETUNE` 必须已经有效，且指向的 Storage Account / Container 已存在且可写。`L4_STORAGE_CONNECTION_STRING` 仅在 legacy key-based 上传脚本仍被保留时才需要。 |
 | 本地设计归档 | 仓库中的 `docs/finetune-qa-archive/` 路径应允许写入，用于保存 `aigoverntrustworthydemo-qa-5000.jsonl` 的归档副本。 |
 | 权限 | 当前执行身份或 deploy SPN 必须具备：读取 model catalog、读取/提交 fine-tune job、在既有 AOAI 上管理 deployment、向既有 finetune container 上传文件、配置 APIM API/policy/diagnostics、查询 App Insights / Azure Monitor Logs 的权限。 |
 | 网络与 DNS | 当前执行环境必须能够解析并访问既有 APIM gateway 与 AOAI endpoint；APIM 与 AOAI 所在 VNet / DNS 路径需保持可用。 |
@@ -356,7 +359,7 @@
 
 1. 读取用户上传的 AI Governance PDF。
 2. 将 PDF 文本提取和必要切块作为 Q&A 生成输入。
-3. 调用现有 native deployment `AIGovernTrustworthyDemoNativeModel`（`gpt-5.4-nano`）生成 **5000 个高质量问答对**，并尽量覆盖 5 个 PDF 的全部内容。
+3. 调用现有 native deployment `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini`）生成 **5000 个高质量问答对**，并尽量覆盖 5 个 PDF 的全部内容。
 4. 对生成结果做去重、抽样和最小人工/脚本质检。
 5. 将结果整理为 `aigoverntrustworthydemo-qa-5000.jsonl`。
 6. 同时将该文件归档到 `docs/finetune-qa-archive/aigoverntrustworthydemo-qa-5000.jsonl`。
@@ -438,7 +441,7 @@
 在这四个点里，当前已经明确的是：
 
 - fine-tune 的测试目的：验证模型调优后的治理可追溯性和独立 target 治理能力
-- Q&A generation model：`gpt-5.4-nano`
+- Q&A generation model：`gpt-5.4-mini`（deployment `AIGovernTrustworthyDemoNativeModelGPT5.4mini`）
 - fine-tune base model：`gpt-4.1`
 - 训练数据边界：5000 条 AI Governance Q&A，由 5 个已上传 PDF 生成后整理为 JSONL
 - 训练文件上传必须复用 `.env.local.L4` 中既有 storage 变量

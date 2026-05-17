@@ -221,7 +221,7 @@ def _retrieve(query: str) -> list[Chunk]:
 
 
 _credential: TokenCredential | None = None
-_aoai_client: AzureOpenAI | None = None
+_aoai_client: Any | None = None
 _telemetry_configured = False
 
 
@@ -256,10 +256,12 @@ def _get_credential() -> TokenCredential:
     return _credential
 
 
-def _get_aoai_client() -> AzureOpenAI:
+def _get_aoai_client() -> Any:
     global _aoai_client
     if _aoai_client is None:
-        aoai_endpoint = _require_env("L4_AOAI_ENDPOINT")
+        aoai_endpoint = (os.getenv("L4_RAG_LLM_ENDPOINT") or os.getenv("L4_AOAI_ENDPOINT") or "").strip()
+        if not aoai_endpoint:
+            raise RuntimeError("Missing required environment variable: L4_RAG_LLM_ENDPOINT or L4_AOAI_ENDPOINT")
         token_provider = get_bearer_token_provider(
             _get_credential(), "https://cognitiveservices.azure.com/.default"
         )
@@ -269,6 +271,20 @@ def _get_aoai_client() -> AzureOpenAI:
             api_version="2025-01-01-preview",
         )
     return _aoai_client
+
+
+def _llm_target_endpoint(model_deployment: str) -> str:
+    aoai_endpoint = (os.getenv("L4_RAG_LLM_ENDPOINT") or os.getenv("L4_AOAI_ENDPOINT") or "").strip()
+    if not aoai_endpoint:
+        raise RuntimeError("Missing required environment variable: L4_RAG_LLM_ENDPOINT or L4_AOAI_ENDPOINT")
+    return (
+        f"{aoai_endpoint.rstrip('/')}/openai/deployments/"
+        f"{model_deployment}/chat/completions"
+    )
+
+
+def _rag_model_name() -> str:
+    return (os.getenv("L4_RAG_MODEL_NAME") or "").strip() or "gpt-5.4-mini"
 
 
 def _configure_telemetry() -> None:
@@ -383,7 +399,6 @@ def query(req: QueryRequest) -> QueryResponse:
     if not req.input.strip():
         raise HTTPException(status_code=400, detail="input must not be empty")
 
-    aoai_endpoint = _require_env("L4_AOAI_ENDPOINT")
     model_deployment = _require_env("L4_RAG_MODEL_DEPLOYMENT")
     context_chunks = _retrieve(req.input)
     context_text = "\n\n".join(
@@ -405,15 +420,13 @@ def query(req: QueryRequest) -> QueryResponse:
         },
     ]
     llm_input_payload: dict[str, Any] = {
-        "model": model_deployment,
+        "model_name": _rag_model_name(),
+        "deployment": model_deployment,
         "messages": messages,
         "target_type": "rag_service",
         "target_id": RAG_TARGET_ID,
     }
-    target_endpoint = (
-        f"{aoai_endpoint.rstrip('/')}/openai/deployments/"
-        f"{model_deployment}/chat/completions"
-    )
+    target_endpoint = _llm_target_endpoint(model_deployment)
 
     credential = _get_credential()
     aoai_client = _get_aoai_client()
@@ -450,7 +463,7 @@ def query(req: QueryRequest) -> QueryResponse:
             llm_input=llm_input_payload,
             llm_output=llm_output_payload,
             credential=credential,
-            model_name=model_deployment,
+            model_name=_rag_model_name(),
             response_id=response_id,
             citations_count=len(citations),
             extra_attributes={
@@ -479,7 +492,7 @@ def query(req: QueryRequest) -> QueryResponse:
                 llm_input=llm_input_payload,
                 error={"type": type(exc).__name__, "message": str(exc)},
                 credential=credential,
-                model_name=model_deployment,
+                model_name=_rag_model_name(),
                 extra_attributes={
                     "rag_app_name": RAG_APP_NAME,
                     "retrieval_mode": RETRIEVAL_MODE,

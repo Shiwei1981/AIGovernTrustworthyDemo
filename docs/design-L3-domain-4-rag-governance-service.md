@@ -14,6 +14,7 @@
 | 文档 | 关系 |
 |---|---|
 | `design-L2-domain-4-prerequisites.md` | 上级步骤列表，步骤 2 的总览入口 |
+| `design-L3-domain-4-monitoring-tracing-logging.md` | Domain 4 monitoring / tracing / logging 主规范 |
 | `design-L2-domain-4-prerequisites-lowleveldesign.md` | 资源命名、身份权限、环境变量、部署资源清单 |
 | `design-L3-domain-4-shared-observability-component.md` | `log_llm_call()` 与 Blob archive 证据格式 |
 | `design-L3-domain-4-apim.md` | APIM `/rag` 前端与 RAG Web App 后端接入设计 |
@@ -49,7 +50,7 @@ RAG Governance Service 使用 **Azure Web App** 作为运行形态，部署到�
 
 | 属性 | 值 | 说明 |
 |---|---|---|
-| `target_type` | `rag_service` | RAG 服务的治理分类，与步骤 7 的普通 Foundry Agent 分开 |
+| `target_type` | `rag_service` | RAG 服务的治理分类，与步骤 6 中的 Agent 对象分开 |
 | `target_id` | `AIGovernTrustworthyDemoRAGService` | Domain 4 目标清单中的唯一标识 |
 | `service_name`（OTel） | `AIGovernTrustworthyDemo.RAGService` | App Insights / Blob evidence 中的服务名 |
 
@@ -67,7 +68,7 @@ RAG Governance Service 的首要目的是成为 Domain 4 的一个可治理、�
 - **Model Identity Capture**：Web App 内部调用模型时写入 `model_name` / `model_version`。
 - **Evidence Chain**：APIM diagnostics + Web App telemetry + Blob evidence 共同构成证据链。
 
-RAG 作为 AI Governance 知识问答后端服务，不包含用户界面或消费端应用层。消费端应用由步骤 9（Tier 1 Consumer App）负责。
+RAG 作为 AI Governance 知识问答后端服务，不包含用户界面或消费端应用层。消费端应用由步骤 7（Consumer Apps，其中 Tier 1 为直接 AI 调用层）负责。
 
 ### 3.2 知识库主题
 
@@ -101,8 +102,7 @@ Blob evidence 沿用 `shared-observability` 既有格式，仅关注 LLM 调用�
 | App Service Plan | **复用现有**：`AIGovernDemoASP`（`AIGovernDemoRG`） |
 | RAG Web App | **待创建**：`AIGovernTrustworthyRAGApp`（`AIGovernTrustworthyRG`） |
 | RAG 运行时身份 | 使用现有 `L4_RAG_SERVICE_CLIENT_ID` / `L4_RAG_SERVICE_CLIENT_SECRET` |
-| Model deployment | `AIGovernTrustworthyDemoNativeModel` |
-| Observability Blob Archive | `aigoverntrustworthysa` / `ai-invocation-archive` |
+| Model deployment | `AIGovernTrustworthyDemoNativeModelGPT5.4mini`（`gpt-5.4-mini` `2026-03-17`） | | `aigoverntrustworthysa` / `ai-invocation-archive` |
 | Application Insights | 复用 `APPLICATIONINSIGHTS_CONNECTION_STRING` |
 | APIM | `/rag` 统一入口，后端指向 RAG Web App |
 | 知识材料 | `apps/rag-service/knowledge-base/` 下的 AI Governance PDF |
@@ -306,7 +306,7 @@ APIM 保留 `/rag` 作为统一治理入口，后端改为 RAG Web App：
 
 ```text
 https://aigoverntrustworthydemoapim.azure-api.net/rag
-    -> https://AIGovernTrustworthyRAGApp.azurewebsites.net/responses
+        -> https://aigoverntrustworthyragapp-hchcfae9hpczcrcx.canadaeast-01.azurewebsites.net/responses
 ```
 
 APIM 仍只做 pass-through、diagnostics、rate limit / policy，不做 RAG orchestration。
