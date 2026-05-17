@@ -194,12 +194,13 @@
 
     .workspace {
       display: grid;
-      grid-template-columns: 1.55fr 0.95fr;
+      grid-template-columns: 1.4fr 1.1fr;
       gap: 20px;
       align-items: start;
     }
 
     .chat-panel, .diag-panel { padding: 22px; }
+    .diag-panel { padding: 16px; }
 
     .panel-title {
       font-size: 20px;
@@ -217,13 +218,17 @@
     }
 
     .chip {
-      padding: 10px 14px;
+      padding: 7px 12px;
       border-radius: 999px;
       background: rgba(77, 125, 224, 0.08);
       border: 1px solid rgba(91, 145, 255, 0.24);
       color: #335482;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
     }
 
@@ -357,15 +362,15 @@
 
     .diag-card {
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 16px;
+      border-radius: 14px;
+      padding: 11px 13px;
       background: linear-gradient(180deg, rgba(255,255,255,0.72), rgba(247, 242, 235, 0.94));
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
     }
 
     .diag-card h3 {
-      margin: 0 0 12px;
-      font-size: 13px;
+      margin: 0 0 8px;
+      font-size: 11px;
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.1em;
@@ -377,36 +382,48 @@
       padding: 0;
       margin: 0;
       display: grid;
-      gap: 10px;
-      font-size: 14px;
+      gap: 7px;
+      font-size: 12px;
     }
 
     .diag-card li span {
       color: var(--muted);
       display: inline-block;
-      width: 118px;
+      width: 72px;
       flex-shrink: 0;
+      font-size: 12px;
     }
 
     .diag-card li {
       display: flex;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 6px;
+      flex-wrap: nowrap;
+      gap: 4px;
+      overflow: hidden;
+    }
+
+    .diag-card li .mono {
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+      min-width: 0;
     }
 
     .chain-flow {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: center;
-      gap: 10px;
+      gap: 6px;
+      overflow-x: auto;
     }
 
     .chain-node {
-      min-width: 132px;
-      flex: 1 1 132px;
-      padding: 13px;
-      border-radius: 16px;
+      min-width: 80px;
+      flex: 1 1 80px;
+      padding: 8px 10px;
+      border-radius: 12px;
       border: 1px solid rgba(62, 92, 138, 0.1);
       background: rgba(255, 255, 255, 0.66);
     }
@@ -414,18 +431,27 @@
     .chain-node small {
       display: block;
       color: #7085a6;
-      margin-bottom: 6px;
-      font-size: 11px;
+      margin-bottom: 3px;
+      font-size: 10px;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
     }
 
     .chain-node strong {
       display: block;
-      margin-bottom: 6px;
-      font-size: 14px;
-      line-height: 1.35;
+      margin-bottom: 2px;
+      font-size: 11px;
+      line-height: 1.3;
       color: #203554;
+      word-break: break-word;
+    }
+
+    .chain-node .mono {
+      font-size: 10px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
     }
 
     .chain-node.source { background: linear-gradient(180deg, rgba(77, 125, 224, 0.14), rgba(77, 125, 224, 0.05)); }
@@ -435,7 +461,7 @@
 
     .chain-arrow {
       color: #6284c5;
-      font-size: 22px;
+      font-size: 16px;
       line-height: 1;
       flex: 0 0 auto;
     }
@@ -486,14 +512,17 @@
     }
 
     /* ── Trace panel ── */
-    .trace-panel {
-      margin-bottom: 20px;
+    .trace-panel, .call-chain-panel {
       border-radius: 20px;
       border: 1px solid rgba(77, 125, 224, 0.22);
       background: linear-gradient(180deg, rgba(241, 246, 255, 0.98), rgba(233, 240, 253, 0.94));
       box-shadow: 0 12px 32px rgba(62, 92, 138, 0.1);
       overflow: hidden;
       animation: rise 220ms ease;
+    }
+    .call-chain-panel {
+      border-color: rgba(103, 135, 194, 0.28);
+      background: linear-gradient(180deg, rgba(245, 248, 255, 0.98), rgba(236, 242, 252, 0.94));
     }
     .tpanel-header {
       padding: 14px 18px 10px;
@@ -723,10 +752,6 @@
         <div class="panel-title">Route And Diagnostics</div>
         <div class="diag-grid">
           <div class="diag-card">
-            <h3>Call Chain</h3>
-            <div class="chain-flow" id="chainDiagram"></div>
-          </div>
-          <div class="diag-card">
             <h3>Current Route</h3>
             <ul id="routeList"></ul>
           </div>
@@ -747,6 +772,8 @@
     </section>
 
     <div class="trace-panel" id="tracePanel" style="display:none; margin-top:20px;"></div>
+
+    <div class="call-chain-panel" id="callChainPanel" style="margin-top:20px;"></div>
 
     <section class="error-panel">
       <div class="error-head">Error Detail Panel</div>
@@ -867,37 +894,41 @@
       const tab = currentTab();
       const headers = state.lastHeaders[state.active] || {};
       document.getElementById('panelTitle').textContent = tab?.display_name || '';
-      document.getElementById('chainDiagram').innerHTML = `
-        <div class="chain-node source">
-          <small>Start</small>
-          <strong>${escapeHtml(state.bootstrap?.user?.display_name || 'Browser User')}</strong>
-          <div class="mono">${escapeHtml(state.bootstrap?.user?.auth_mode || 'local_dev')}</div>
+
+      // ── Call Chain panel (same layout as Trace Chain) ──
+      const user = state.bootstrap?.user?.display_name || 'Browser User';
+      const authMode = state.bootstrap?.user?.auth_mode || 'local_dev';
+      const runtimeUrl = state.bootstrap?.gateway?.runtime_url || '';
+      const apiPath = tab?.api_path || '';
+      const downPath = tab?.downstream_path || '';
+      const targetName = tab?.display_name || '';
+      const targetType = tab?.target_type || '';
+
+      function ccNode(cls, icon, label, sub) {
+        return `<div class="tnode tnode-${cls}">
+          <div class="tnode-icon">${icon}</div>
+          <div class="tnode-label">${escapeHtml(label)}</div>
+          <div class="tnode-sub">${escapeHtml(sub)}</div>
+        </div>`;
+      }
+      const ccFlow = [
+        ccNode('tier1', '👤', user, authMode),
+        '<div class="tarrow">→</div>',
+        ccNode('apim', '🖥️', 'Local Tier 1', runtimeUrl),
+        '<div class="tarrow">→</div>',
+        ccNode('apim', '🔀', 'APIM', downPath),
+        '<div class="tarrow">→</div>',
+        ccNode('backend', targetTypeIcon(targetType), targetName, targetType),
+      ].join('');
+
+      document.getElementById('callChainPanel').innerHTML = `
+        <div class="tpanel-header">
+          <div class="tpanel-title">🔗 Configured Call Chain</div>
+          <div class="tpanel-meta"><span>当前 Tab: <strong>${escapeHtml(tab?.display_name || '—')}</strong></span></div>
         </div>
-        <div class="chain-arrow">→</div>
-        <div class="chain-node gateway">
-          <small>Gateway</small>
-          <strong>Local Tier 1 App</strong>
-          <div class="mono">${escapeHtml(state.bootstrap?.gateway?.runtime_url || '')}</div>
-        </div>
-        <div class="chain-arrow">→</div>
-        <div class="chain-node service">
-          <small>Forward API</small>
-          <strong>Tier 1 ${escapeHtml(tab?.api_path || '')}</strong>
-          <div class="mono">raw forward + evidence</div>
-        </div>
-        <div class="chain-arrow">→</div>
-        <div class="chain-node gateway">
-          <small>Downstream APIM</small>
-          <strong>${escapeHtml(tab?.downstream_path || '')}</strong>
-          <div class="mono">target route</div>
-        </div>
-        <div class="chain-arrow">→</div>
-        <div class="chain-node target">
-          <small>Final Target</small>
-          <strong>${escapeHtml(tab?.display_name || '')}</strong>
-          <div class="mono">${escapeHtml(tab?.target_type || '')}</div>
-        </div>
+        <div class="tflow">${ccFlow}</div>
       `;
+
       document.getElementById('routeList').innerHTML = `
         <li><span>Target</span> <strong>${escapeHtml(tab?.target_id || '')}</strong></li>
         <li><span>Type</span> ${escapeHtml(tab?.target_type || '')}</li>
