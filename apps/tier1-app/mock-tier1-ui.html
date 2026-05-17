@@ -385,6 +385,14 @@
       color: var(--muted);
       display: inline-block;
       width: 118px;
+      flex-shrink: 0;
+    }
+
+    .diag-card li {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
     }
 
     .chain-flow {
@@ -479,7 +487,7 @@
 
     /* ── Trace panel ── */
     .trace-panel {
-      margin-bottom: 16px;
+      margin-bottom: 20px;
       border-radius: 20px;
       border: 1px solid rgba(77, 125, 224, 0.22);
       background: linear-gradient(180deg, rgba(241, 246, 255, 0.98), rgba(233, 240, 253, 0.94));
@@ -702,7 +710,6 @@
         <div class="panel-title" id="panelTitle"></div>
         <div class="chips" id="chips"></div>
         <div class="timeline" id="timeline"></div>
-        <div class="trace-panel" id="tracePanel" style="display:none;"></div>
         <div class="composer">
           <textarea id="composer" placeholder="Type a new question for the active backend tab..."></textarea>
           <div class="actions">
@@ -738,6 +745,8 @@
         </div>
       </aside>
     </section>
+
+    <div class="trace-panel" id="tracePanel" style="display:none; margin-top:20px;"></div>
 
     <section class="error-panel">
       <div class="error-head">Error Detail Panel</div>
@@ -835,11 +844,7 @@
       for (const msg of state.conversations[state.active] || []) {
         const node = document.createElement('div');
         node.className = 'msg ' + msg.role;
-        let inner = `<small>${escapeHtml(msg.role)}</small>${msg.content}`;
-        if (msg.role === 'assistant' && msg.traceId) {
-          inner += `<div><button class="trace-btn" onclick="loadTrace('${escapeHtml(msg.traceId)}')">🔍 Trace Chain</button></div>`;
-        }
-        node.innerHTML = inner;
+        node.innerHTML = `<small>${escapeHtml(msg.role)}</small>${msg.content}`;
         timeline.appendChild(node);
       }
       timeline.scrollTop = timeline.scrollHeight;
@@ -902,7 +907,7 @@
       `;
       document.getElementById('headerList').innerHTML = `
         <li><span>Request</span> <span class="mono">${escapeHtml(headers['x-governance-request-id'] || '—')}</span></li>
-        <li><span>Trace</span> <span class="mono">${escapeHtml(headers['x-governance-trace-id'] || '—')}</span></li>
+        <li><span>Trace</span> <span class="mono">${escapeHtml(headers['x-governance-trace-id'] || '—')}</span>${headers['x-governance-trace-id'] ? ` <button class="trace-btn" onclick="loadTrace('${escapeHtml(headers['x-governance-trace-id'])}')">🔍 Trace Chain</button>` : ''}</li>
         <li><span>Archive</span> <span class="mono">${escapeHtml(headers['x-governance-archive-id'] || '—')}</span></li>
         <li><span>Response</span> <span class="mono">${escapeHtml(headers['x-governance-response-id'] || '—')}</span></li>
         <li><span>Service</span> <span class="mono">${escapeHtml(headers['x-governance-service-name'] || '—')}</span></li>
