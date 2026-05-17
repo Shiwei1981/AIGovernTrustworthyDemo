@@ -893,9 +893,20 @@
       const user = state.bootstrap?.user?.display_name || 'Browser User';
       const authMode = state.bootstrap?.user?.auth_mode || 'local_dev';
       const tier2Url = state.bootstrap?.gateway?.runtime_url || '';
+      const tier1ApimBase = state.bootstrap?.gateway?.tier1_apim_base_url || '';
       const tier1Url = state.bootstrap?.gateway?.tier1_base_url || '';
       const targetName = tab?.display_name || '';
       const targetType = tab?.final_target_type || '';
+
+      // Downstream path from Tier1 to backend APIM (per tab)
+      const t1DownstreamPaths = {
+        'rag': '/rag/responses',
+        'foundry-agent': '/foundry-agent',
+        'vm-model': '/vm-model/v1/chat/completions',
+        'native-model': '/native-model',
+        'finetune-model': '/finetune-model',
+      };
+      const t1DownPath = t1DownstreamPaths[state.active] || tab?.tier1_forward_path || '';
 
       function ccNode(cls, icon, label, sub) {
         return `<div class="tnode tnode-${cls}">
@@ -904,30 +915,26 @@
           <div class="tnode-sub">${escapeHtml(sub)}</div>
         </div>`;
       }
-      // For RAG tab, add Foundry LLM node (RAG Service calls Foundry directly via OpenAI SDK)
-      const isRag = state.active === 'rag';
-      const ragLlmNode = isRag
-        ? ccNode('sidecar', '🧠', 'Foundry LLM', 'gpt-5.4-mini · direct')
-        : '';
-      const ragLlmArrow = isRag ? '<div class="tarrow">→</div>' : '';
 
-      // For Foundry Agent tab, add internal model deployment node (Azure-managed, not in App Insights)
+      const isRag = state.active === 'rag';
       const isAgent = state.active === 'foundry-agent';
-      const agentLlmNode = isAgent
-        ? ccNode('sidecar', '🧠', 'Foundry LLM', 'gpt-5.4-mini · internal')
-        : '';
-      const agentLlmArrow = isAgent ? '<div class="tarrow">→</div>' : '';
 
       const ccFlow = [
         ccNode('tier1', '👤', user, authMode),
         '<div class="tarrow">→</div>',
         ccNode('apim', '🔀', 'Tier 2 App', tier2Url),
         '<div class="tarrow">→</div>',
+        ccNode('apim', '🔀', 'APIM', tier1ApimBase || tab?.tier1_forward_path || ''),
+        '<div class="tarrow">→</div>',
         ccNode('backend', '🖥️', 'Tier 1 App', tier1Url),
         '<div class="tarrow">→</div>',
+        ccNode('apim', '🔀', 'APIM', t1DownPath),
+        '<div class="tarrow">→</div>',
         ccNode('backend', targetTypeIcon(targetType), targetName, targetType),
-        ragLlmArrow, ragLlmNode,
-        agentLlmArrow, agentLlmNode,
+        isRag   ? '<div class="tarrow">→</div>' : '',
+        isRag   ? ccNode('sidecar', '🧠', 'Foundry LLM', 'gpt-5.4-mini · direct') : '',
+        isAgent ? '<div class="tarrow">→</div>' : '',
+        isAgent ? ccNode('sidecar', '🧠', 'Foundry LLM', 'gpt-5.4-mini · internal') : '',
       ].join('');
 
       document.getElementById('callChainPanel').innerHTML = `
@@ -1279,6 +1286,9 @@
       renderTimeline();
       renderDiag();
       renderError();
+      const tp = document.getElementById('tracePanel');
+      tp.style.display = 'none';
+      tp.innerHTML = '';
     }
 
     document.getElementById('sendBtn').onclick = () => send();

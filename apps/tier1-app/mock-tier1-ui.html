@@ -934,7 +934,7 @@
       document.getElementById('callChainPanel').innerHTML = `
         <div class="tpanel-header">
           <div class="tpanel-title">🔗 Configured Call Chain</div>
-          <div class="tpanel-meta"><span>当前 Tab: <strong>${escapeHtml(tab?.display_name || '—')}</strong></span></div>
+          <div class="tpanel-meta"><span>Current Tab: <strong>${escapeHtml(tab?.display_name || '—')}</strong></span></div>
         </div>
         <div class="tflow">${ccFlow}</div>
       `;
@@ -1191,7 +1191,7 @@
     function renderTraceHtml(data) {
       const { evidence, blob_metadata, blob_input, blob_output } = data;
       if (!evidence || !evidence['trace_id']) {
-        return '<div class="tpanel-empty">⚠️ App Insights 中未找到该 Trace ID 的记录（可能仍在写入，请稍后再试）。</div>';
+        return '<div class="tpanel-empty">⚠️ No record found for this Trace ID in App Insights (may still be flushing — retry in a moment).</div>';
       }
 
       const { nodes, blobNode } = buildChain(data);
@@ -1218,11 +1218,11 @@
       }).join('');
 
       function fmtPayload(obj) {
-        if (!obj) return '<em style="color:#8a9bb8">暂无数据</em>';
+        if (!obj) return '<em style="color:#8a9bb8">No data</em>';
         return `<pre class="tpayload-pre">${escapeHtml(JSON.stringify(obj, null, 2))}</pre>`;
       }
 
-      const citLine = citCount > 0 ? `<span class="tnode-badge" style="margin-left:6px">${citCount} 引用</span>` : '';
+      const citLine = citCount > 0 ? `<span class="tnode-badge" style="margin-left:6px">${citCount} refs</span>` : '';
       const statusClass = status === 'succeeded' ? 'tnode-ok' : 'tnode-err';
 
       return `
@@ -1250,11 +1250,11 @@
         </div>
         <div class="tpanel-payloads">
           <details class="tdetails">
-            <summary class="tdetails-summary">📥 LLM Input <span class="tnode-badge" style="margin-left:auto">折叠</span></summary>
+            <summary class="tdetails-summary">📥 LLM Input <span class="tnode-badge" style="margin-left:auto">collapsed</span></summary>
             <div class="tdetails-body">${fmtPayload(blob_input)}</div>
           </details>
           <details class="tdetails">
-            <summary class="tdetails-summary">📤 LLM Output <span class="tnode-badge" style="margin-left:auto">折叠</span></summary>
+            <summary class="tdetails-summary">📤 LLM Output <span class="tnode-badge" style="margin-left:auto">collapsed</span></summary>
             <div class="tdetails-body">${fmtPayload(blob_output)}</div>
           </details>
         </div>`;
@@ -1263,7 +1263,7 @@
     async function loadTrace(traceId) {
       const panel = document.getElementById('tracePanel');
       panel.style.display = '';
-      panel.innerHTML = '<div class="tpanel-loading">🔄 正在查询 App Insights + Blob…</div>';
+      panel.innerHTML = '<div class="tpanel-loading">🔄 Querying App Insights + Blob…</div>';
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       try {
         const res = await fetch(`/api/trace/${encodeURIComponent(traceId)}`);
@@ -1281,6 +1281,9 @@
       renderTimeline();
       renderDiag();
       renderError();
+      const tp = document.getElementById('tracePanel');
+      tp.style.display = 'none';
+      tp.innerHTML = '';
     }
 
     document.getElementById('sendBtn').onclick = () => send();
