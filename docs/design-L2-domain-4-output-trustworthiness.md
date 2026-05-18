@@ -44,13 +44,12 @@
 
 | 指标 | 图形 | 是否本期实现 | 设计确认状态 | 指标解释 | 指标数据来源 |
 |---|---|---|---|---|---|
-| Evaluation Coverage by Target Type | stacked bar | 是 | 已确认 | 按治理对象类型（AI App / Agent / Azure 模型 / VM 模型）分拆的已评估覆盖率 | Azure AI Foundry Evaluations、Azure DevOps Test Plans |
+| Evaluation Coverage by Target Type | stacked bar | 是 | 已确认 | 按治理对象类型（AI App / Agent / Azure 模型 / VM 模型）分拆的已评估覆盖率 | Azure AI Foundry Evaluations |
 | Groundedness / Citation Rate | donut | 是 | 已确认 | 输出中成功命中检索证据或批准来源的比例（无 RAG 时显示 N/A） | Azure AI Foundry Evaluations、RAG 响应 citation、Web App Blob evidence |
 | Safety Evaluator Failure Rate | donut + number | 是 | 已确认 | 安全评测中判定失败的输出占比；显示失败率和对应绝对数量 | Azure AI Foundry Evaluations（Safety Evaluator） |
 
 **数据来源**：
 - Azure AI Foundry Evaluations API：`GET /evaluations`，字段 `target_type`、`groundedness_score`、`safety_pass_rate`
-- Azure DevOps Work Items：红队与评估发现记录
 
 **计算逻辑**：
 - Evaluation Coverage = 本周期内已完成至少一次 evaluation 的 target 数 / 纳管 target 总数，按 target_type 拆分
@@ -88,19 +87,18 @@
 
 | 指标 | 图形 | 是否本期实现 | 设计确认状态 | 指标解释 | 指标数据来源 |
 |---|---|---|---|---|---|
-| Red Teaming Coverage by Target Type | stacked bar | 是 | 已确认 | 按治理对象类型分拆的已完成 red teaming 覆盖率 | Azure DevOps Work Items（PyRIT 结果存储）、Azure AI Foundry Red Teaming |
-| Attack Success Rate by Target Type | stacked bar | 是 | 已确认 | 按治理对象类型分拆的攻击成功率（越低越好） | Azure AI Foundry Red Teaming（PyRIT）、Azure DevOps Work Items |
-| Open High-Risk Red Team Findings | plain number + sparkline | 是 | 已确认 | 当前未关闭的高危/严重红队发现数量及趋势 | Azure DevOps Work Items（标签 `red-team`、严重度 High/Critical） |
+| Red Teaming Coverage by Target Type | stacked bar | 是 | 已确认 | 按治理对象类型分拆的已完成 red teaming 覆盖率 | Azure AI Foundry Red Teaming、Application Insights red team result events |
+| Attack Success Rate by Target Type | stacked bar | 是 | 已确认 | 按治理对象类型分拆的攻击成功率（越低越好） | Azure AI Foundry Red Teaming、Application Insights red team result events |
+| High-Risk Red Team Findings | plain number + sparkline | 是 | 已确认 | 当前周期内命中的高危/严重红队发现数量及趋势 | Application Insights red team result events、Blob archive evidence metadata |
 
 **数据来源**：
 - Azure AI Foundry Red Teaming（内置）：Azure 托管模型和 Agent
-- PyRIT（外部调用）：VM 模型 OpenAI-compatible 推理端点，零 VM 侧改动；结果写入 Azure DevOps Work Items
-- Azure DevOps Work Items：`GET /wit/workitems?$filter=type='Bug'&tags='red-team'`
+- PyRIT（外部调用）：VM 模型 OpenAI-compatible 推理端点，零 VM 侧改动；结果写入 Application Insights red team result events，必要时在 Blob archive 保留证据引用
 
 **计算逻辑**：
 - Red Teaming Coverage = 本周期内已完成至少一次 red teaming 的 target 数 / 纳管 target 总数，按 target_type 分拆
 - Attack Success Rate = 成功绕过安全控制的攻击数 / 总攻击场景数，按 target_type 分拆
-- Open High-Risk Findings = Azure DevOps Work Items 中状态为 Open / Active，severity = High / Critical，tag 含 `red-team` 的数量
+- High-Risk Red Team Findings = 当前周期内 severity = High / Critical 的红队结果数量；当前设计不再引入 open / closed 工单状态语义
 
 **VM 模型 Red Teaming 策略**：
 - PyRIT 通过 VM 模型的 OpenAI-compatible REST 端点发起外部调用
@@ -138,8 +136,8 @@
 |---|---|---|
 | RAG 系统 | `AIGovernTrustworthyRAGApp` v1.0.2（BM25 + Azure OpenAI，5 个 AI Governance PDF） | Groundedness / Source Attribution Rate 通过 Blob evidence 中的 citations 字段评估 |
 | App Insights model_name / model_version 字段 | 尚未确认是否已配置 | 若支持，用户可增加配置；Model Identity Capture Rate 依赖此字段 |
-| VM 模型接入 shared-observability | 必需 | 未接入时 VM 组 Model Identity Capture Rate 显示 0%；必须补齐 Python evidence 与 Blob metadata |
-| PyRIT 结果存储 | 可设计 | 建议：PyRIT 执行后结果写入 Azure DevOps Work Items（tag: `red-team`） |
+| VM 调用方接入 shared-observability + VM 侧 App Insights 字段 | 必需 | VM 模型服务自身不要求接入 shared-observability；但未来调用方必须补齐 Python evidence 与 Blob metadata，VM 服务侧应尽可能记录 `trace_id`、`model_name`、`model_version` 等 App Insights 字段 |
+| PyRIT 结果存储 | 可设计 | 建议：PyRIT 执行后结果写入 Application Insights red team result events，并通过 Blob archive 保留证据引用 |
 | Disclosure scope | 未定义 | 4.4 目录完全后置，不展示 |
 
 ---

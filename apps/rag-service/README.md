@@ -8,13 +8,13 @@ Domain 4 RAG Governance Service — 当前批准方案为 **Azure Web App + 轻�
 APIM /rag
     -> Azure Web App (AIGovernTrustworthyRAGApp)
     -> in-process chunking / lexical retrieval
-    -> model call (AIGovernTrustworthyDemoNativeModel)
+    -> model call (AIGovernTrustworthyDemoNativeModelGPT5.4mini)
     -> shared_observability.log_llm_call() -> Blob archive
 ```
 
 - 运行形态：**Azure Web App**，部署到现有 App Service Plan `AIGovernDemoASP`
 - 运行身份：`L4_RAG_SERVICE_CLIENT_ID`
-- 检索层：默认采用**代码切块 + 进程内轻量级检索**，不依赖 Hosted Agent、Foundry file_search、vector store、Azure AI Search
+- 检索层：默认采用**代码切块 + 进程内轻量级检索**，不依赖额外检索云资源或平台侧托管检索能力
 - 知识库主题：AI Governance 行业标准 PDF
 - 日志：LLM input / output / error -> `aigoverntrustworthysa/ai-invocation-archive`
 
@@ -29,8 +29,9 @@ APIM /rag
 
 ```text
 apps/rag-service/
+  app.py                # Azure Web App 主服务与 /responses API
   knowledge-base/       # PDF 知识库（*.pdf 已 gitignore）
-  scripts/              # APIM 验证 / 历史脚本
+  scripts/              # Web App 部署/配置辅助文件
 ```
 
-> 仓库中当前仍保留 Hosted Agent 方向的实验性文件，作为历史调研产物；它们**不是**当前批准的部署路径。
+`apps/rag-service` 目录只保留当前批准的 **Azure Web App** 运行路径；已废弃实现不应继续出现在此目录。

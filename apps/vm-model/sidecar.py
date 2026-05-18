@@ -9,6 +9,7 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -33,6 +34,13 @@ APPLICATIONINSIGHTS_CONNECTION_STRING = os.getenv("APPLICATIONINSIGHTS_CONNECTIO
 os.environ["OTEL_SERVICE_NAME"] = SERVICE_NAME
 
 app = FastAPI(title="AIGovernTrustworthyDemo VM Model Sidecar")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 def _require_env(name: str, value: str) -> str:
@@ -114,6 +122,44 @@ def _proxy_request(*, method: str, path: str, body: bytes | None, headers: Mappi
         raise HTTPException(status_code=502, detail=f"Downstream llama-server unavailable: {reason}") from exc
 
 
+def _salvage_llama_500(payload: bytes) -> tuple[int, str, bytes] | None:
+    """
+    llama.cpp occasionally returns HTTP 500 with a body like:
+      {"error":{"code":500,"message":"Failed to parse input at pos 0: <full model output>","type":"server_error"}}
+
+    The model actually finished generation successfully; the 500 is a post-processing
+    bug triggered by invalid UTF-8 bytes in the quantized output.  When we detect this
+    pattern we salvage the content from the error message and return a synthetic 200
+    chat-completion response so the caller still receives the answer.
+    """
+    try:
+        err_body = json.loads(payload.decode("utf-8", errors="replace"))
+        message: str = err_body.get("error", {}).get("message", "")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+
+    prefix = "Failed to parse input at pos 0: "
+    if not message.startswith(prefix):
+        return None
+
+    content = message[len(prefix):]
+    synthetic = {
+        "id": "chatcmpl-salvaged",
+        "object": "chat.completion",
+        "model": MODEL_NAME,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+    log.warning("Salvaged response from llama-server 500 (invalid UTF-8 in output)")
+    return 200, "application/json", json.dumps(synthetic, ensure_ascii=False).encode("utf-8")
+
+
 def _extract_response_id(content_type: str, payload: bytes) -> str | None:
     if "application/json" not in content_type.lower():
         return None
@@ -170,6 +216,12 @@ async def chat_completions(request: Request) -> Response:
         headers=request.headers,
     )
     latency_ms = int((time.perf_counter() - start) * 1000)
+
+    if status_code == 500:
+        salvaged = _salvage_llama_500(response_body)
+        if salvaged is not None:
+            status_code, content_type, response_body = salvaged
+
     response_id = _extract_response_id(content_type, response_body)
 
     try:

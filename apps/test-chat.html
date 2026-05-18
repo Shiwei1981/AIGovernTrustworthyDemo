@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Domain 4 VM Model Chat Test</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #111827;
+      color: #f9fafb;
+    }
+
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      color: #d1d5db;
+    }
+
+    .panel {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    input,
+    textarea,
+    button {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 8px;
+      border: 1px solid #4b5563;
+      padding: 10px 12px;
+      font: inherit;
+    }
+
+    input,
+    textarea {
+      background: #111827;
+      color: #f9fafb;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: 2fr 1fr;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 16px;
+    }
+
+    button {
+      width: auto;
+      background: #2563eb;
+      color: #fff;
+      border: 0;
+      cursor: pointer;
+      padding: 10px 18px;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .meta {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-bottom: 12px;
+    }
+
+    .meta div {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .meta strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #93c5fd;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 120px;
+    }
+
+    .status-ok {
+      color: #86efac;
+    }
+
+    .status-error {
+      color: #fca5a5;
+    }
+
+    @media (max-width: 700px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>VM Phi-3 Chat Test</h1>
+    <p>直接从浏览器调用公网 VM 的 OpenAI 兼容接口，用于手工验证问答与 trace 关联。</p>
+
+    <section class="panel">
+      <div class="grid">
+        <div>
+          <label for="endpoint">Endpoint</label>
+          <input id="endpoint" value="http://20.175.113.183:11434/v1/chat/completions">
+        </div>
+        <div>
+          <label for="model">Model</label>
+          <input id="model" value="Phi-3-mini-4k-instruct">
+        </div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt">请用 3 句话介绍你自己，并明确说明你是运行在 Azure VM 上的 Phi-3 测试模型。</textarea>
+      </div>
+
+      <div class="actions">
+        <button id="sendButton" type="button">Send</button>
+        <span id="requestState">Ready</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="meta">
+        <div><strong>HTTP Status</strong><span id="httpStatus">-</span></div>
+        <div><strong>Latency</strong><span id="latency">-</span></div>
+        <div><strong>Response ID</strong><span id="responseId">-</span></div>
+        <div><strong>Trace ID</strong><span id="traceId">-</span></div>
+      </div>
+
+      <label for="answer">Assistant Response</label>
+      <pre id="answer"></pre>
+    </section>
+
+    <section class="panel">
+      <label for="raw">Raw JSON</label>
+      <pre id="raw"></pre>
+    </section>
+  </main>
+
+  <script>
+    const endpointInput = document.getElementById("endpoint");
+    const modelInput = document.getElementById("model");
+    const promptInput = document.getElementById("prompt");
+    const sendButton = document.getElementById("sendButton");
+    const requestState = document.getElementById("requestState");
+    const httpStatus = document.getElementById("httpStatus");
+    const latency = document.getElementById("latency");
+    const responseId = document.getElementById("responseId");
+    const traceId = document.getElementById("traceId");
+    const answer = document.getElementById("answer");
+    const raw = document.getElementById("raw");
+
+    function randomHex(length) {
+      const bytes = new Uint8Array(length / 2);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+    }
+
+    function createTraceparent() {
+      const trace = randomHex(32);
+      const parent = randomHex(16);
+      return {
+        traceId: trace,
+        traceparent: `00-${trace}-${parent}-01`,
+      };
+    }
+
+    async function sendChat() {
+      sendButton.disabled = true;
+      answer.textContent = "";
+      raw.textContent = "";
+      responseId.textContent = "-";
+      httpStatus.textContent = "-";
+      latency.textContent = "-";
+
+      const trace = createTraceparent();
+      traceId.textContent = trace.traceId;
+      requestState.textContent = "Sending...";
+      requestState.className = "";
+
+      const requestBody = {
+        model: modelInput.value.trim(),
+        messages: [
+          {
+            role: "user",
+            content: promptInput.value.trim(),
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 1024,
+      };
+
+      const startedAt = performance.now();
+
+      try {
+        const response = await fetch(endpointInput.value.trim(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "traceparent": trace.traceparent,
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        const elapsedMs = Math.round(performance.now() - startedAt);
+        latency.textContent = `${elapsedMs} ms`;
+        httpStatus.textContent = `${response.status} ${response.statusText}`;
+
+        const payload = await response.json();
+        raw.textContent = JSON.stringify(payload, null, 2);
+        responseId.textContent = payload.id || "-";
+
+        const content = payload?.choices?.[0]?.message?.content;
+        answer.textContent = typeof content === "string" ? content : "(no assistant message)";
+
+        requestState.textContent = response.ok ? "Success" : "Request failed";
+        requestState.className = response.ok ? "status-ok" : "status-error";
+      } catch (error) {
+        requestState.textContent = "Request failed";
+        requestState.className = "status-error";
+        answer.textContent = error instanceof Error ? error.message : String(error);
+      } finally {
+        sendButton.disabled = false;
+      }
+    }
+
+    sendButton.addEventListener("click", sendChat);
+  </script>
+</body>
+</html>

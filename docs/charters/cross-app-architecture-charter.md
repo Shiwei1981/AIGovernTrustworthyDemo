@@ -37,6 +37,7 @@
 19. 每一个应用程序，都应该在代码层默认开启与 Azure App Insights 的集成，其使用的 Azure App Insights 链接字，以及 OTEL_SERVICE_NAME 都可以在 .env.local.L4 配置文件找到，这里需要注意的是，每个应用的 OTEL_SERVICE_NAME 名字都是不同的。
 20. 每一个使用 LLM 接口的应用，都必须套用 shared-observability 组件，对于每一次的 LLM 接口调用进行log记录，不论调用结果是成功还是失败。
 21. 本项目创建的所有资源，都创建到 AIGovernTrustworthyRG 资源组。
+22. 禁用 Oryx
 
 ## 3. shared-observability 使用要求
 

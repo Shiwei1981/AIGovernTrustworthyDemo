@@ -18,6 +18,7 @@
 | `docs/design-L2-domain-4-prerequisites.md` | 上级步骤列表；步骤 5 的总入口 |
 | `docs/design-L2-domain-4-prerequisites-lowleveldesign.md` | 已给出 VM 规格、选型、`.env.local.L4` 变量与资源清单 |
 | `docs/design-L2-domain-4-output-trustworthiness.md` | 约束步骤 5 后续必须支撑的治理对象分类与指标字段 |
+| `docs/design-L3-domain-4-monitoring-tracing-logging.md` | Domain 4 monitoring / tracing / logging 主规范 |
 | `docs/design-L3-domain-4-apim.md` | 已为 `/vm-model` 预留 APIM 入口与网络前置条件 |
 | `docs/design-L3-domain-4-shared-observability-component.md` | 约束未来调用方如何为 VM 模型调用补齐 evidence；不要求 VM 模型服务自身集成 |
 | `infra/target-registry/targets.json` | 已存在 `vm_huggingface_model` 的目标占位 |
@@ -32,7 +33,7 @@
 2. Domain 4 的 target type 必须分开治理；步骤 5 的对象必须明确保持为 `vm_huggingface_model`，不能与 `foundry_native_model`、`foundry_finetune_model`、`foundry_agent`、`rag_service` 或 Consumer App 混合统计。
 3. 所有运行期变量应优先沿用 `.env.local.L4` 中已有命名，不得擅自扩展新的平行命名体系。
 4. 所有可代理的 HTTP hop 最终都必须收敛到 APIM；但步骤 5 的最小可运行切片允许先以 **VM 内网直连 smoke test** 证明模型和 API 本身可用。
-5. 步骤 5 与步骤 6 必须保持边界清晰：**步骤 5 负责把 VM 模型、OpenAI-compatible API、App Insights 基础遥测和 trace 透传跑起来；步骤 6 负责把调用方（Tier 1 / Evaluation / PyRIT 等）的 shared-observability、Blob evidence 和 APIM 后置接入补齐。**
+5. 步骤 5 与后续调用方 observability 接入阶段必须保持边界清晰：**步骤 5 负责把 VM 模型、OpenAI-compatible API、App Insights 基础遥测和 trace 透传跑起来；后续再由调用方（Tier 1 / Evaluation / PyRIT 等）补齐 shared-observability、Blob evidence 和 APIM 后置接入。**
 6. 在步骤 5 完成后，VM 服务应已具备基础 App Insights / trace 记录能力；但完整 `input` / `output` 证据仍由未来调用方通过 shared-observability 记录。
 7. 本项目是 POC，但仍需遵守既有架构；如实施中发现需要新增设计外资源、改变现有资源组、暴露公网入口、或改用新的推理栈，必须先征得用户许可。
 8. `.env.local.L4` 是当前环境合同；本步骤只能读取并引用既有变量名，不应重写或复制其中敏感值。
@@ -48,7 +49,7 @@
 1. **运行载体是什么**：VM 用什么操作系统、规格、网络边界、磁盘和账号模型。
 2. **模型选哪个**：选择哪个小型、许可清晰、资源占用低的 Hugging Face 文本模型。
 3. **推理 API 怎么暴露**：如何提供一个最小但稳定的 OpenAI-compatible API 给内网调用方使用。
-4. **如何和后续治理链路衔接**：如何保证 VM 侧 App Insights、步骤 6 的调用方 shared-observability、APIM `/vm-model`、evaluation、red teaming 不需要推翻步骤 5 的基础选型。
+4. **如何和后续治理链路衔接**：如何保证 VM 侧 App Insights、后续调用方 shared-observability、APIM `/vm-model`、evaluation、red teaming 不需要推翻步骤 5 的基础选型。
 5. **如何证明这个 target 已经“能用”**：至少要有可执行的内网连通性与推理验证口径。
 
 ---
@@ -59,7 +60,7 @@
 
 | 锚点 | 当前状态 | 对步骤 5 的含义 |
 |---|---|---|
-| `docs/design-L2-domain-4-prerequisites.md` §步骤 5 / §步骤 6 | 已定义步骤边界 | 步骤 5 与步骤 6 必须拆开推进 |
+| `docs/design-L2-domain-4-prerequisites.md` §步骤 5 | 已定义 VM 服务边界 | 步骤 5 只负责 VM 服务自身，不负责完整调用方 evidence |
 | `docs/design-L2-domain-4-prerequisites-lowleveldesign.md` | 已选定 VM 规格、模型、运行方式与变量名 | 步骤 5 默认不重新选型 |
 | `docs/design-L3-domain-4-apim.md` §7.6 | 已为 `/vm-model` 预留 API 路径 | 步骤 5 的 API 形态必须能被该路径代理 |
 | `.env.local.L4` | 已存在 `L4_VM_*` 变量合同 | 步骤 5 的实现和脚本必须沿用这些名字 |
@@ -147,8 +148,8 @@
 
 1. 步骤 5 使用 `llama.cpp server`（`llama-server`）原生 OpenAI-compatible API 合同，不额外开发一层自定义包装 API。
 2. 请求 / 响应结构应尽可能贴近通用 OpenAI Chat Completions 语义，不发明 VM 专属 body schema。
-3. 若后续步骤 6 为调用方接入 shared-observability 或 APIM 需要增加包装层，也不得破坏 `POST /v1/chat/completions` 作为统一推理入口的对外语义。
-4. 目前不把 `GET /metadata` 作为步骤 5 的硬要求；若后续需要增加，应在步骤 6 或后续设计中明确。
+3. 若后续调用方为接入 shared-observability 或 APIM 需要增加包装层，也不得破坏 `POST /v1/chat/completions` 作为统一推理入口的对外语义。
+4. 目前不把 `GET /metadata` 作为步骤 5 的硬要求；若后续需要增加，应在后续调用方或连接器设计中明确。
 5. API 返回格式必须保持足够兼容，使 APIM `/vm-model` 和调用脚本无需为 VM 专门设计完全不同的请求结构。
 
 ### 5.5 网络与安全边界需求
@@ -216,12 +217,12 @@
 其中：
 
 1. 步骤 5 本身不要求完整 evidence 字段全部已经落库或落 Blob。
-2. 但步骤 5 的 API、trace 透传和目标身份设计不能阻碍步骤 6 继续补齐这些字段。
+2. 但步骤 5 的 API、trace 透传和目标身份设计不能阻碍后续调用方继续补齐这些字段。
 3. 除非遗留集成明确要求，否则不应把 `correlation_id` 重新引入为核心设计键。
 
-### 5.8 与步骤 6 的边界需求
+### 5.8 与后续调用方 observability 接入的边界需求
 
-步骤 5 与步骤 6 必须显式拆分，避免“先把 observability 混进去再说”导致范围失控。
+步骤 5 与后续调用方 observability 接入必须显式拆分，避免“先把 observability 混进去再说”导致范围失控。
 
 **步骤 5 必须完成的内容**：
 
@@ -239,17 +240,17 @@
 4. `archive_id` / `payload_ref` 的完整证据链闭环。
 5. VM 模型纳入 Model Identity Capture Rate 的完整统计闭环。
 
-这些内容属于**步骤 6：调用方 shared-observability 接入与 VM 调用链观测补齐** 的范围。
+这些内容属于**后续调用方 shared-observability 接入与 VM 调用链观测补齐** 的范围。
 
 ### 5.9 与其他步骤的复用需求
 
 步骤 5 完成后，至少要支持以下后续动作：
 
-1. 被步骤 6 直接扩展为“调用方 shared-observability + VM 侧 App Insights”联合观测的 VM 目标。
+1. 被后续调用方步骤直接扩展为“调用方 shared-observability + VM 侧 App Insights”联合观测的 VM 目标。
 2. 被 `docs/design-L3-domain-4-apim.md` 中的 `/vm-model` API 代理，无需推翻端口和路径假设。
-3. 被步骤 9 的 Tier 1 Consumer App 当作一种独立下游 AI 服务调用。
-4. 被步骤 13 的 evaluation runner 纳入 `vm_huggingface_model` 目标清单。
-5. 被步骤 15 的 PyRIT / red teaming 当作独立测试对象。
+3. 被步骤 7 的 Tier 1 Consumer App 当作一种独立下游 AI 服务调用。
+4. 被步骤 10 的 evaluation runner 纳入 `vm_huggingface_model` 目标清单。
+5. 被步骤 11 的 PyRIT / red teaming 当作独立测试对象。
 6. 被 Domain 4 L1/L2 报表按独立 target type 展示，而不是混入 Azure 托管模型。
 
 ---
@@ -296,7 +297,7 @@
 | 实现复杂度 | ~100 行 Python，不引入复杂框架依赖 |
 
 **约束**：
-1. sidecar 本身不持久化 `input` / `output` 正文；完整证据归档由步骤 6 调用方负责。
+1. sidecar 本身不持久化 `input` / `output` 正文；完整证据归档由后续调用方负责。
 2. sidecar 写 App Insights 遥测失败时不得阻断已成功的推理响应，但必须输出明确错误日志；若 sidecar 无法连接 llama-server，则应显式返回 5xx，不做 success-shaped fallback。
 3. 代码放置在 `apps/vm-model/` 目录，通过步骤 5 脚本部署到 VM。
 
@@ -327,7 +328,7 @@
 | 内网 smoke test 命令 | 可验证 `GET /health` 与 `POST /v1/chat/completions` |
 | VM 侧 App Insights 遥测设计 | 明确 trace header 承接方式、记录字段与最小查询口径 |
 | target 身份一致性 | `infra/target-registry/targets.json` 中 VM 条目与真实配置一致 |
-| 与步骤 6 的衔接说明 | 明确下一步如何由调用方补齐 shared-observability 与完整 evidence |
+| 与后续调用方的衔接说明 | 明确下一步如何由调用方补齐 shared-observability 与完整 evidence |
 
 ---
 
@@ -342,7 +343,7 @@
 5. 已确认最小 API 合同至少包括 `POST /v1/chat/completions`，并尽量贴近通用 OpenAI-compatible 格式。
 6. 已确认 VM 推理端口（`11434/TCP`）不对公网开放；VM 虽配置了 Public IP（仅用于 SSH 管理），NSG 必须严格限制推理端口仅允许受控内网来源；长期治理入口通过 APIM `/vm-model` 路由。
 7. 已确认 VM 服务自身不接入 shared-observability，但应尽可能接入 App Insights、承接 `trace_id` 并记录统一字段。
-8. 已确认步骤 5 与步骤 6 的边界：步骤 5 先交付可运行 target + VM 侧 App Insights，步骤 6 再由调用方补齐 shared-observability 与完整证据链。
+8. 已确认步骤 5 与后续调用方的边界：步骤 5 先交付可运行 target + VM 侧 App Insights，后续再由调用方补齐 shared-observability 与完整证据链。
 9. 已确认该目标在 Domain 4 中始终保持独立身份：`target_type = vm_huggingface_model`，不与 Azure 托管模型合并。
 
 ---
@@ -438,7 +439,7 @@ llama-server
 
 | Unit | 启动命令 | 说明 |
 |---|---|---|
-| `llama-server.service` | `llama-server --model /opt/models/phi3/Phi-3-mini-4k-instruct-q4.gguf --alias Phi-3-mini-4k-instruct --host 0.0.0.0 --port 11435` | 仅负责模型推理 |
+| `llama-server.service` | `llama-server --model /opt/models/phi3/Phi-3-mini-4k-instruct-q4.gguf --alias Phi-3-mini-4k-instruct --host 127.0.0.1 --port 11435` | 仅负责模型推理；绑定 loopback，仅允许 sidecar 本机访问 |
 | `vm-model-sidecar.service` | `uvicorn sidecar:app --host 0.0.0.0 --port 11434` | 对外统一入口与轻量遥测 |
 
 建议 sidecar unit 使用 `After=llama-server.service` 与 `Requires=llama-server.service`，确保启动顺序正确。
@@ -447,11 +448,11 @@ llama-server
 
 | 脚本 | 最终职责 | 当前状态 |
 |---|---|---|
-| `01_create_vm.sh` | 仅保留为重建参考；当前 VM 已手动创建 | 参考脚本 |
-| `02_init_vm.sh` | 安装 Python 环境、HF CLI、`llama-server` 运行依赖 | 待开发 |
-| `03_download_model.sh` | 从 HF 下载 `Phi-3-mini-4k-instruct-q4.gguf` 到固定目录 | 待开发 |
-| `04_start_service.sh` | 写入并启用两个 systemd unit | 待开发 |
-| `05_smoke_test.sh` | 验证 `/health` 与 `/v1/chat/completions` | 待开发 |
+| `01_create_vm.sh` | 仅保留为重建参考；当前 VM 已手动创建 | ✅ 参考脚本（VM 已存在）|
+| `02_init_vm.sh` | 安装 Python venv、HF CLI、llama.cpp b9159 二进制 | ✅ 已完成并验证 |
+| `03_download_model.sh` | 从 HF 下载 `Phi-3-mini-4k-instruct-q4.gguf` 到 `/opt/models/phi3/` | ✅ 已完成并验证（2.3 GB）|
+| `04_start_service.sh` | 部署 sidecar 代码、写入并重启两个 systemd unit | ✅ 已完成并验证 |
+| `05_smoke_test.sh` | 验证 `/health` 与 `/v1/chat/completions` | ✅ 已完成并验证 |
 
 ### 10.7 最小验证路径
 
@@ -462,4 +463,4 @@ llama-server
 3. **sidecar 健康检查**：VM 内 / 内网 `curl http://10.1.1.8:11434/health`
 4. **推理调用**：`POST /v1/chat/completions` 返回非空 `choices[0].message.content`
 5. **遥测验证**：App Insights 中可查到 `AIGovernTrustworthyVMModelTrace`
-6. **后续衔接**：APIM backend 可直接指向 `http://10.1.1.8:11434`
+6. **APIM 衔接**：✅ APIM `/vm-model` 已绑定 `http://10.1.1.8:11434`，policy 与 diagnostics 已配置；VNet 内 `http://10.1.2.4/vm-model/health`（Host: aigoverntrustworthydemoapim.azure-api.net）smoke test 通过

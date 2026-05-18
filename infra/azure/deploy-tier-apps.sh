@@ -29,8 +29,10 @@ load_env
 : "${AZ_DEPLOY_CLIENT_SECRET:?}"
 : "${AZ_SUBSCRIPTION_ID:?}"
 : "${L4_RESOURCE_GROUP:?}"
+: "${L4_RAG_APP_NAME:?}"
 : "${L4_TIER1_APP_NAME:?}"
 : "${L4_TIER2_APP_NAME:?}"
+: "${L4_OBSERVABILITY_PACKAGE_NAME:?}"
 
 # ── Azure login ───────────────────────────────────────────────────────────────
 echo "==> Logging in as deploy SPN..."
@@ -42,6 +44,38 @@ az login --service-principal \
 az account set --subscription "$AZ_SUBSCRIPTION_ID"
 
 RG="$L4_RESOURCE_GROUP"
+
+ensure_private_apim_network() {
+  local rag_subnet_id rag_vnet_id current_subnet app
+  rag_subnet_id="$(az webapp vnet-integration list \
+    --name "$L4_RAG_APP_NAME" \
+    --resource-group "$RG" \
+    --query '[0].vnetResourceId' \
+    -o tsv)"
+  if [[ -z "$rag_subnet_id" ]]; then
+    echo "ERROR: Could not resolve VNet integration from $L4_RAG_APP_NAME."
+    exit 1
+  fi
+  rag_vnet_id="${rag_subnet_id%/subnets/*}"
+
+  for app in "$L4_TIER1_APP_NAME" "$L4_TIER2_APP_NAME"; do
+    current_subnet="$(az webapp vnet-integration list \
+      --name "$app" \
+      --resource-group "$RG" \
+      --query '[0].vnetResourceId' \
+      -o tsv 2>/dev/null || true)"
+    if [[ "$current_subnet" != "$rag_subnet_id" ]]; then
+      echo "==> [$app] Attaching to VNet subnet used by $L4_RAG_APP_NAME ..."
+      az webapp vnet-integration add \
+        --name "$app" \
+        --resource-group "$RG" \
+        --vnet "$rag_vnet_id" \
+        --subnet "$rag_subnet_id" \
+        --skip-delegation-check \
+        --output none
+    fi
+  done
+}
 
 # ── Build deployment zip ──────────────────────────────────────────────────────
 DEPLOY_DIR="$(mktemp -d)"
@@ -116,9 +150,11 @@ COMMON_SETTINGS=(
   "AZURE_TENANT_ID=$AZURE_TENANT_ID"
   "L4_APIM_GATEWAY_URL=$L4_APIM_GATEWAY_URL"
   "L4_FOUNDRY_AGENT_ID=$L4_FOUNDRY_AGENT_ID"
+  "L4_OBSERVABILITY_PACKAGE_NAME=$L4_OBSERVABILITY_PACKAGE_NAME"
   "L4_OBSERVABILITY_BLOB_STORAGE_ACCOUNT_NAME=$L4_OBSERVABILITY_BLOB_STORAGE_ACCOUNT_NAME"
   "L4_OBSERVABILITY_BLOB_CONTAINER=$L4_OBSERVABILITY_BLOB_CONTAINER"
   "L4_OBSERVABILITY_BLOB_PREFIX=$L4_OBSERVABILITY_BLOB_PREFIX"
+  "WEBSITE_DNS_SERVER=168.63.129.16"
   "SCM_DO_BUILD_DURING_DEPLOYMENT=false"
   "DISABLE_ORYX_BUILD=true"
   "ENABLE_ORYX_BUILD=false"
@@ -140,6 +176,8 @@ for APP in "$L4_TIER1_APP_NAME" "$L4_TIER2_APP_NAME"; do
       --output none 2>/dev/null || true
   fi
 done
+
+ensure_private_apim_network
 
 # ── Deploy Tier 1 ─────────────────────────────────────────────────────────────
 echo ""

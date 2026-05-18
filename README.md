@@ -27,6 +27,7 @@ Domain 4 相关工作应以以下文档为准：
 - Domain 4 前置条件设计：`docs/design-L2-domain-4-prerequisites.md`
 - Domain 4 低级别设计：`docs/design-L2-domain-4-prerequisites-lowleveldesign.md`
 - Domain 4 输出可信设计：`docs/design-L2-domain-4-output-trustworthiness.md`
+- Domain 4 monitoring / tracing / logging 统一设计：`docs/design-L3-domain-4-monitoring-tracing-logging.md`
 - Domain 4 shared-observability 组件设计：`docs/design-L3-domain-4-shared-observability-component.md`
 
 根 README 不再重复维护 L2/L3 级别的矩阵、资源表和字段细节，避免与设计文档产生双份定义。

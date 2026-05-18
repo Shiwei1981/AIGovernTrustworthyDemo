@@ -204,7 +204,7 @@ Application Insights 的管理对象分为三类：
 | 4 | Foundry fine-tune 模型 | ✅ 已完成 | Azure AI Foundry | Copilot + 用户授权 | fine-tune job、deployment、APIM `/finetune-model`、5000 Q&A 归档、target registry |
 | 5 | VM Hugging Face 模型 + API | ✅ 已完成 | Azure VM、App Insights | Copilot + deploy SPN | 安装脚本、API 服务代码、遥测配置 |
 | 6 | Agent（Foundry 自定义 Agent + Copilot Studio Agent） | 🟡 部分完成；Copilot Studio Agent POC 暂停于正式 license 阻塞点 | Azure AI Foundry、Copilot Studio、SharePoint、Direct Line、APIM | Copilot + 用户 Portal / UI | Agent 清单、端点记录、调用验证脚本、身份授权说明 |
-| 7 | Consumer Apps（Tier 1 + Tier 2） | ⬜ 待开始 | App Service、APIM、全部 AI 后端、Tier 1 | Copilot + 用户授权 | Tier 1/Tier 2 API 代码、forwarding API、部署脚本、KQL 追踪验证 |
+| 7 | Consumer Apps（Tier 1 + Tier 2） | ✅ 已完成 | App Service、APIM、全部 AI 后端、Tier 1 | Copilot + 用户授权 | Tier 1/Tier 2 API 代码、forwarding API、部署脚本、KQL 追踪验证 |
 | 8 | App Insights 遥测字段配置 | ⬜ 待开始 | shared-observability、App Insights | Copilot + 用户授权 | 字段规范、KQL 验证语句 |
 | 9 | Foundry Tracing 能力 | ⬜ 待开始 | Azure AI Foundry、App Insights | Copilot + 用户 Portal | tracing 配置说明、适用范围表 |
 | 10 | Foundry Evaluations 能力 | ⬜ 待开始 | Azure AI Foundry Evaluations | Copilot + 用户授权 | target 清单、评估脚本 |
@@ -372,9 +372,11 @@ Application Insights 的管理对象分为三类：
   - 若产品界面中无法明确看到后台运行身份或 connection owner，需要用户配合在 Portal / Power Platform 管理界面确认实际身份。
 - **产物**：Foundry Agent 清单、Copilot Studio Agent 端点记录、调用验证脚本、纳管清单、运行身份 / 授权说明。
 
-### 步骤 7：Consumer Apps（Tier 1 + Tier 2）
+### 步骤 7：Consumer Apps（Tier 1 + Tier 2）（已完成）
 
 > 详细需求设计见：`docs/design-L3-domain-4-consumer-apps.md`
+
+- **状态**：已完成。
 
 本步骤一次性完成 Tier 1 与 Tier 2 两类 Consumer App 的整体设计与开发，但两者在治理口径上仍保持独立 target type，不合并统计。
 
