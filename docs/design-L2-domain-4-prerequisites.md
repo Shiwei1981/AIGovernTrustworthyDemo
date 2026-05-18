@@ -393,6 +393,7 @@ Application Insights 的管理对象分为三类：
 8. 验证从外部调用 Tier 1 可成功触发下游 AI 服务，并确认 APIM / Foundry / Python evidence 三层链路完整。
 9. Tier 1 前端页面与外部程序调用其独立 API 时，若二者都能发起下游调用，则两条入口路径都必须满足同样的 evidence 记录要求。
 10. 对 VM Hugging Face 模型的调用由 Tier 1 forwarding route 负责写入 `input` / `output` / `metadata` evidence，并保留 `trace_id`、`response_id`、`model_name`、`model_version`、`target_type=vm_huggingface_model`、`target_id`。
+11. Tier 1 自带的 Trace Chain API 必须由 Tier 1 Web App 自己使用运行时 SPN 直接读取 observability Blob archive；不得依赖本地 blob viewer 或额外的第三个 Web App 才能展开 archive payload。
 
 - **Copilot 可执行**：接口设计、forwarding 代码、遥测 helper、Blob / App Insights 写入代码、部署脚本。
 - **可能需要用户操作**：如 AI 服务 endpoint 权限不足，需要用户授权。
@@ -411,6 +412,7 @@ Application Insights 的管理对象分为三类：
 6. 验证：通过 KQL 可以从 Tier 2 请求的 `trace_id` 追踪到最终 AI 服务调用（Tier 2 / APIM / Tier 1 / Foundry 或 VM evidence），证明间接 AI 使用可追溯。
 7. Tier 2 前端页面触发的调用必须与 Tier 2 后端写出的 evidence 对齐，不能把“前端发起页面请求”和“后端调用 Tier 1 API”混成一条无法区分的记录。
 8. Tier 2 -> Tier 1 服务间调用固定使用 app-only token，而不是透传浏览器用户 token；对应的 Entra API exposure、权限授予与 admin consent 属于实现前置条件。
+9. Tier 2 Trace Chain 必须由 Tier 2 Web App 自己查询 App Insights 和 Blob archive，不能把 Trace Chain 后端汇总责任代理给 Tier 1，也不能额外依赖 blob viewer 进程或独立 blob viewer Web App。
 
 - **Copilot 可执行**：接口设计、转发代码、遥测 helper、部署脚本、KQL 验证查询。
 - **可能需要用户操作**：如果 App Service 权限不足，需要用户授权。

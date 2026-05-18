@@ -6,7 +6,6 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import fastapi
 import uvicorn
@@ -35,6 +34,7 @@ from apps.consumer_common import (  # noqa: E402
     resolve_app_credential,
     resolve_response_identity,
 )
+from apps.trace_chain_backend import query_trace_chain  # noqa: E402
 from shared_observability import SourceType, TargetType, log_llm_call  # noqa: E402
 
 
@@ -132,11 +132,6 @@ def _request_user(request: Request) -> dict[str, Any]:
     return current_user(request_headers_map(request.headers))
 
 
-def _tier1_is_local() -> bool:
-    host = urlparse(TIER1_DOWNSTREAM_BASE_URL).hostname or ""
-    return host in {"127.0.0.1", "localhost"}
-
-
 def _tier1_forward_headers(request: Request, trace_context: Any) -> dict[str, str]:
     headers = {
         "Accept": "application/json",
@@ -147,11 +142,10 @@ def _tier1_forward_headers(request: Request, trace_context: Any) -> dict[str, st
     }
     if trace_context.tracestate:
         headers["tracestate"] = trace_context.tracestate
-    if not _tier1_is_local():
-        scope = f"api://{os.getenv('L4_TIER1_APP_CLIENT_ID', '').strip()}/.default"
-        if scope != "api:///.default":
-            token = _observability_credential.get_token(scope).token
-            headers["Authorization"] = f"Bearer {token}"
+    scope = f"api://{os.getenv('L4_TIER1_APP_CLIENT_ID', '').strip()}/.default"
+    if scope != "api:///.default":
+        token = _observability_credential.get_token(scope).token
+        headers["Authorization"] = f"Bearer {token}"
     return headers
 
 
@@ -426,20 +420,12 @@ def chat_finetune_model(request: Request) -> Response:
 
 @app.get("/api/trace/{trace_id}")
 def api_trace(trace_id: str) -> Response:
-    """Proxy Trace Chain lookup to Tier 1's /api/trace endpoint."""
-    import urllib.request as _urllib_request
-    import urllib.error as _urllib_error
-
-    url = f"{TIER1_DOWNSTREAM_BASE_URL}/api/trace/{trace_id}"
+    """Query App Insights + Blob directly for a trace and return structured call-chain data."""
     try:
-        with _urllib_request.urlopen(url, timeout=40) as resp:
-            body = resp.read()
-            return Response(content=body, media_type="application/json")
-    except _urllib_error.HTTPError as exc:
-        body = exc.read()
-        return Response(content=body, status_code=exc.code, media_type="application/json")
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=502)
+        payload = query_trace_chain(trace_id=trace_id, credential=_observability_credential)
+    except ValueError:
+        return JSONResponse({"error": "Invalid trace_id"}, status_code=400)
+    return JSONResponse(payload)
 
 
 if __name__ == "__main__":

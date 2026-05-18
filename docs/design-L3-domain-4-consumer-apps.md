@@ -500,6 +500,7 @@ Tier 1 必须满足以下 tracing / telemetry 要求：
 3. 对每次实际下游 AI 调用写 shared-observability thin event + Blob evidence。
 4. 调用下游时透传当前 trace context。
 5. Tier 1 前端对应后端发起的下游调用和 Tier 1 独立 API 发起的下游调用都必须满足以上规则。
+6. Tier 1 Trace Chain 后端在按 `payload_ref` / `archive_id` 展开 Blob archive 时，必须直接使用 Tier 1 运行时 SPN 访问 Observability Blob Storage；不得依赖本地 blob viewer 或额外旁路服务。
 
 #### R7-302 Tier 2 tracing 要求
 
@@ -509,6 +510,7 @@ Tier 2 必须满足以下 tracing / telemetry 要求：
 2. 自身 request、dependency、exception telemetry 写入 App Insights。
 3. 调用 Tier 1 时透传当前 trace context。
 4. 调用 Tier 1 时写 shared-observability thin event + Blob evidence，记录 Tier 2 这一层间接 AI 使用入口调用。
+5. Tier 2 Trace Chain 后端必须由 Tier 2 Web App 自己查询 App Insights 与 Blob archive，不能把 Trace Chain 汇总逻辑代理给 Tier 1。
 
 #### R7-303 分层记录原则
 
@@ -550,6 +552,7 @@ Tier 2 必须满足以下 tracing / telemetry 要求：
 3. 能在 Blob archive 查询到链路中记录过的 LLM `input` 与 `output`。
 4. APIM、应用、Foundry、VM 各层记录能被拼接成一个完整演示链路。
 5. 对 Native / Fine-tune 链路，App Insights 中除 APIM 记录外，还应能观察到来自 `AIGovernTrustworthyRAGProject` tracing 相关记录。
+6. Tier 1 / Tier 2 部署到各自 Web App 后，Trace Chain 必须在不依赖 blob viewer 进程的情况下独立工作。
 
 #### R7-304 统一字段要求
 
@@ -591,6 +594,7 @@ Tier 1 / Tier 2 首版实现应优先复用 `.env.local.L4` 中已定义变量�
 2. Tier 1 与 Tier 2 使用各自独立的运行时 SPN。
 3. Web App Service Plan 复用现有已存在的 Plan，不新建平行 Plan。
 4. Tier 1 Web App 与 Tier 2 Web App 在 Azure 部署层面分开，但各自内部前后端仍打包为单一应用。
+5. blob viewer 不属于步骤 7 的部署单元；Tier 1 Trace API 与 Tier 2 Trace API 都各自直接读取 App Insights 与 Blob archive，不额外引入第三个 Trace Chain 运行组件，也不要求 Tier 2 代理 Tier 1 的 Trace API。
 
 ---
 
@@ -1596,6 +1600,7 @@ Tier 1 / Tier 2 详细设计明确复用以下已存在变量：
 6. `L4_VM_PRIVATE_IP` / `L4_VM_MODEL_API_PORT`
 7. `L4_FOUNDRY_AGENT_ID`
 8. `L4_OTEL_SERVICE_NAME_TIER1_APP` / `L4_OTEL_SERVICE_NAME_TIER2_APP`
+9. `L4_OBSERVABILITY_BLOB_STORAGE_ACCOUNT_NAME` / `L4_OBSERVABILITY_BLOB_CONTAINER` / `L4_OBSERVABILITY_BLOB_PREFIX`
 
 ### 15.2 已确认纳入环境合同的新增变量
 

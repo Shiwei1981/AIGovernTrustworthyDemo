@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
 import sys
-import urllib.request as _urllib_request
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +41,7 @@ from apps.consumer_common import (  # noqa: E402
     resolve_app_credential,
     resolve_response_identity,
 )
+from apps.trace_chain_backend import query_trace_chain  # noqa: E402
 from shared_observability import SourceType, TargetType, log_llm_call  # noqa: E402
 
 
@@ -509,152 +508,16 @@ def chat_finetune_model(request: Request) -> Response:
 
 _APP_INSIGHTS_NAME = os.getenv("L4_APP_INSIGHTS_NAME", "appinsights")
 _APP_INSIGHTS_RG = os.getenv("L4_APP_INSIGHTS_RG", "AIGovernDemoRG")
-_BLOB_VIEWER_PROXY = os.getenv("L4_BLOB_VIEWER_PROXY", "http://127.0.0.1:8888/api/blob")
 
 
 @app.get("/api/trace/{trace_id}")
 def api_trace(trace_id: str) -> JSONResponse:
     """Query App Insights + Blob for a trace and return structured call-chain data."""
-    # Sanitise: trace_id must be hex chars only
-    safe_id = "".join(c for c in trace_id if c in "0123456789abcdefABCDEF")
-    if not safe_id:
-        return JSONResponse({"error": "Invalid trace_id"}, status_code=400)
-
-    query = (
-        "union requests, dependencies, traces "
-        "| where timestamp > ago(7d) "
-        f"| where * has '{safe_id}' "
-        "| project timestamp, itemType, id, operation_Id, operation_ParentId, "
-        "cloud_RoleName, name, message, resultCode, success, duration, customDimensions "
-        "| order by timestamp asc | limit 80"
-    )
-    rows: list = []
     try:
-        proc = subprocess.run(
-            [
-                "az", "monitor", "app-insights", "query",
-                "--app", _APP_INSIGHTS_NAME,
-                "--resource-group", _APP_INSIGHTS_RG,
-                "--analytics-query", query,
-                "--query", "tables[0].rows",
-                "-o", "json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if proc.stdout.strip():
-            rows = json.loads(proc.stdout)
-    except Exception as exc:
-        log.warning("App Insights trace query failed: %s", exc)
-
-    evidence_rows: list[dict[str, Any]] = []
-    requests_list: list = []
-    deps_list: list = []
-
-    for row in rows:
-        if len(row) < 12:
-            continue
-        ts, item_type, rid, op_id, parent_id, role, name, message, result_code, success, duration, custom_dims = row
-        if item_type == "trace" and message == "AIGovernTrustworthyLLMEvidence":
-            try:
-                dims = json.loads(custom_dims) if isinstance(custom_dims, str) else (custom_dims or {})
-                ref = dims.get("aigov.payload.ref", "")
-                evidence_entry = {"timestamp": ts}
-                evidence_entry.update(dims)
-                evidence_rows.append({
-                    "timestamp": ts,
-                    "evidence": evidence_entry,
-                    "archive_prefix": ref.rstrip("/") if ref else "",
-                })
-            except Exception:
-                pass
-        elif item_type == "request":
-            requests_list.append({
-                "timestamp": ts, "id": rid, "parent_id": parent_id,
-                "role": role or "", "name": name or "",
-                "result_code": result_code or "", "success": bool(success),
-                "duration_ms": round(float(duration or 0), 1),
-            })
-        elif item_type == "dependency":
-            deps_list.append({
-                "timestamp": ts, "id": rid, "parent_id": parent_id,
-                "role": role or "", "name": name or "",
-                "result_code": result_code or "", "success": bool(success),
-                "duration_ms": round(float(duration or 0), 1),
-            })
-
-    evidence = (
-        next(
-            (entry["evidence"] for entry in evidence_rows if entry["evidence"].get("aigov.source.type") == "tier1_consumer"),
-            None,
-        )
-        or (evidence_rows[0]["evidence"] if evidence_rows else {})
-    )
-    primary_archive_prefix = (
-        next(
-            (entry["archive_prefix"] for entry in evidence_rows if entry["evidence"].get("aigov.source.type") == "tier1_consumer"),
-            "",
-        )
-        or (evidence_rows[0]["archive_prefix"] if evidence_rows else "")
-    )
-
-    def _load_blob_archive(archive_prefix: str) -> dict[str, Any]:
-        blob_metadata: dict = {}
-        blob_input = None
-        blob_output = None
-        if not archive_prefix:
-            return {
-                "blob_metadata": blob_metadata,
-                "blob_input": blob_input,
-                "blob_output": blob_output,
-            }
-        for suffix, slot in [("metadata.json", "meta"), ("input.json", "inp"), ("output.json", "out")]:
-            path = f"{archive_prefix}/{suffix}"
-            try:
-                req = _urllib_request.Request(f"{_BLOB_VIEWER_PROXY}?path={path}")
-                with _urllib_request.urlopen(req, timeout=6) as resp:
-                    content = json.loads(resp.read())
-                if suffix == "metadata.json":
-                    blob_metadata = content
-                elif suffix == "input.json":
-                    blob_input = content
-                else:
-                    blob_output = content
-            except Exception:
-                pass
-        return {
-            "blob_metadata": blob_metadata,
-            "blob_input": blob_input,
-            "blob_output": blob_output,
-        }
-
-    primary_blob = _load_blob_archive(primary_archive_prefix)
-    blob_archives = []
-    for entry in evidence_rows:
-        archive = _load_blob_archive(entry["archive_prefix"])
-        blob_archives.append({
-            "timestamp": entry["timestamp"],
-            "service_name": entry["evidence"].get("service.name", ""),
-            "source_type": entry["evidence"].get("aigov.source.type", ""),
-            "target_type": entry["evidence"].get("aigov.target.type", ""),
-            "target_id": entry["evidence"].get("aigov.target.id", ""),
-            "archive_id": entry["evidence"].get("aigov.archive.id", ""),
-            "payload_ref": entry["evidence"].get("aigov.payload.ref", ""),
-            **archive,
-        })
-
-    return JSONResponse({
-        "trace_id": safe_id,
-        "evidence": evidence,
-        "evidences": [entry["evidence"] for entry in evidence_rows],
-        "blob_metadata": primary_blob["blob_metadata"],
-        "blob_input": primary_blob["blob_input"],
-        "blob_output": primary_blob["blob_output"],
-        "blob_archives": blob_archives,
-        "requests": requests_list,
-        "dependencies": deps_list,
-    })
+        payload = query_trace_chain(trace_id=trace_id, credential=_credential, logger=log)
+    except ValueError:
+        return JSONResponse({"error": "Invalid trace_id"}, status_code=400)
+    return JSONResponse(payload)
 
 
 if __name__ == "__main__":

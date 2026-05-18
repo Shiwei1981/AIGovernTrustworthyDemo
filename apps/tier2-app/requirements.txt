@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+azure-identity
+azure-storage-blob
+-e ../../packages/shared-observability

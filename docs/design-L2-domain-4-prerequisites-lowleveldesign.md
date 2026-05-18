@@ -125,7 +125,7 @@ az role assignment create \
 |---|---|---|
 | `Cognitive Services OpenAI User` | AI Foundry / Azure OpenAI resource | 仅当 Tier 1 需要绕过 APIM 直接调用推理面时才需要；若严格统一走 APIM，可降级为非硬前提 |
 | `Monitoring Metrics Publisher` | `AIGovernTrustworthyRG` | 写入调用链与自定义事件 |
-| `Storage Blob Data Contributor` | Observability Blob Storage Account | 写入 AI 调用归档 |
+| `Storage Blob Data Contributor` | Observability Blob Storage Account | 写入 AI 调用归档，并供 Tier 1 Trace Chain API 直接读取 archive payload（不依赖 blob viewer） |
 
 #### 3.2.3 Tier 2 App 运行时 SPN
 
@@ -139,6 +139,8 @@ az role assignment create \
 |---|---|---|
 | `Monitoring Metrics Publisher` | `AIGovernTrustworthyRG` | 写入调用链与自定义事件 |
 | `Storage Blob Data Contributor` | Observability Blob Storage Account | 写入 AI 调用归档 |
+
+> **Trace Chain 部署边界（步骤 7 补充）**：Tier 1 与 Tier 2 部署到各自 Azure Web App 后，Trace Chain 运行所需的后端依赖固定为 APIM、Application Insights 和 Observability Blob archive。当前不规划、也不要求把 blob viewer 部署到单独的 Azure Web App；blob viewer 仅可作为本地运维/排障工具存在，不能作为 Tier 1 / Tier 2 Trace Chain 的运行前置。
 
 #### 3.2.3A Tier 2 -> Tier 1 服务间授权前置条件
 
