@@ -205,8 +205,8 @@ Application Insights 的管理对象分为三类：
 | 5 | VM Hugging Face 模型 + API | ✅ 已完成 | Azure VM、App Insights | Copilot + deploy SPN | 安装脚本、API 服务代码、遥测配置 |
 | 6 | Agent（Foundry 自定义 Agent + Copilot Studio Agent） | 🟡 部分完成；Copilot Studio Agent POC 暂停于正式 license 阻塞点 | Azure AI Foundry、Copilot Studio、SharePoint、Direct Line、APIM | Copilot + 用户 Portal / UI | Agent 清单、端点记录、调用验证脚本、身份授权说明 |
 | 7 | Consumer Apps（Tier 1 + Tier 2） | ✅ 已完成 | App Service、APIM、全部 AI 后端、Tier 1 | Copilot + 用户授权 | Tier 1/Tier 2 API 代码、forwarding API、部署脚本、KQL 追踪验证 |
-| 8 | App Insights 遥测字段配置 | ⬜ 待开始 | shared-observability、App Insights | Copilot + 用户授权 | 字段规范、KQL 验证语句 |
-| 9 | Foundry Tracing 能力 | ⬜ 待开始 | Azure AI Foundry、App Insights | Copilot + 用户 Portal | tracing 配置说明、适用范围表 |
+| 8 | App Insights 遥测字段配置 | 🟡 部分完成；剩余能力暂时跳过 | App Insights、Workbook、步骤 7 Trace Chain UI | Copilot + 用户授权 | App Insights Workbook 报表、KQL 查询、展示边界说明 |
+| 9 | Foundry Tracing 能力 | ⏭ 暂时跳过 | Azure AI Foundry、App Insights | Copilot + 用户 Portal | tracing 配置说明、适用范围表 |
 | 10 | Foundry Evaluations 能力 | ⬜ 待开始 | Azure AI Foundry Evaluations | Copilot + 用户授权 | target 清单、评估脚本 |
 | 11 | Red Teaming 环境（PyRIT） | ⬜ 待开始 | PyRIT、全部目标 endpoint | Copilot + 用户授权 | connector 代码、攻击集 |
 | 12 | 指标状态语义定义 | ⬜ 待开始 | Domain 4 报表、API | Copilot + 用户确认阈值 | 状态语义表、字段定义 |
@@ -420,42 +420,48 @@ Application Insights 的管理对象分为三类：
 - **可能需要用户操作**：如果 App Service 权限不足，需要用户授权。
 - **产物**：Tier 2 App 需求设计、API 代码、部署脚本、KQL 追踪验证查询。
 
-### 步骤 8：App Insights 遥测字段配置
+### 步骤 8：App Insights 遥测字段配置（部分完成，剩余能力暂时跳过）
 
-1. 按 §2.4.3 定义统一字段：`trace_id`、`span_id`、`response_id`、`model_name`、`model_version`、`target_type`、`target_id`、`payload_ref`。
-2. 在 shared-observability 写出的 evidence 事件中，优先使用贴近 Foundry / OTel 的字段命名。
-3. 对不可直接埋点的目标，记录来自 Foundry / 调用脚本的等效字段。
-4. 按 §2.4.5 定义统一事件名，并编写 KQL 查询验证 APIM、Foundry、Python evidence 的字段覆盖率。
+> 详细需求设计见：`docs/design-L3-domain-4-app-insights-telemetry-fields.md`
 
-- **Copilot 可执行**：遥测 helper、KQL 查询、字段覆盖率验证脚本。
-- **可能需要用户操作**：如果 App Insights 权限不足，需要用户授权。
-- **产物**：遥测字段规范、代码 helper、KQL 验证语句。
+1. 当前步骤 8 标记为 **部分完成**。
+2. 已完成的范围仅包括：App Insights / Azure Monitor Logs 查询设计、Workbook 报表部署、基础统计图与单 trace 调用链图尝试。
+3. 当前 App Insights Workbook 展示不全面，调用链图可读性与稳定性仍存在风险；不再把它作为唯一 tracing chain 展示入口。
+4. tracing chain 的正式演示入口改为使用 **步骤 7 已开发的 Tier 1 / Tier 2 Trace Chain UI**。
+5. Foundry UI tracing、完整 troubleshooting 字段治理、字段主合同收敛、runner/evidence 全覆盖等步骤 8 其他能力 **暂时跳过**，后续如有明确需求再单独恢复。
 
-### 步骤 9：Foundry Tracing 能力
+- **Copilot 已完成**：App Insights tracing query 设计、Workbook 报表部署、Foundry UI tracing 可行性研究、展示边界说明。
+- **暂不继续推进**：Foundry UI tracing 深入集成、App Insights 图形继续美化、troubleshooting 字段治理、写入方字段统一。
+- **当前产物**：`infra/monitoring/domain4-step8-tracing.workbook.json`、`infra/monitoring/deploy-step8-tracing-workbook.sh`、步骤 8 L3 设计说明。
 
+### 步骤 9：Foundry Tracing 能力（暂时跳过）
+
+**当前状态**：⏭ 暂时跳过。
+
+原因：步骤 8 实测发现，通过 instrumented SDK 写入 App Insights 的 fine-tuned model trace 无法在 Foundry UI Tracing 页面显示；Foundry UI Tracing 显示需要满足 Foundry SDK / OpenTelemetry 特定语义约束，当前项目通过 APIM 网关的调用路径无法自动满足该约束。后续如有明确展示需求再单独恢复。
+
+原始计划步骤（保留供参考）：
 1. 确认哪些目标支持 Foundry Tracing：Foundry 原生模型、fine-tune 模型、Foundry Agent。
 2. 在 Foundry 项目中开启 tracing / monitoring。
 3. 连接 Application Insights / Log Analytics。
 4. 触发测试调用，验证 trace 记录生成。
-5. 明确 VM Hugging Face 模型不走 Foundry tracing，由 APIM（若可代理）+ Python evidence 记录。
-
-- **Copilot 可执行**：tracing 状态检查、调用验证脚本、KQL 查询。
-- **可能需要用户操作**：Foundry Portal 中开启 tracing 或连接资源。
-- **产物**：Tracing 配置说明、验证查询、适用范围表。
+5. 明确 VM Hugging Face 模型不走 Foundry tracing，由 APIM + Python evidence 记录。
 
 ### 步骤 10：Foundry Evaluations 能力
 
+> 详细需求设计见：`docs/design-L3-domain-4-foundry-evaluations.md`
+
 1. 设计 evaluation target schema：target type、endpoint、auth、input、expected behavior。
-2. 为 RAG Service、Foundry 原生模型、fine-tune 模型、Foundry Agent、Copilot Studio Agent、VM Hugging Face 模型分别建立 target 记录。
-3. 准备最小 evaluation 数据集。
-4. 配置 groundedness / citation / safety evaluator。
-5. 运行一次评估并导出结果。
+2. 为 RAG Service、Foundry 原生模型、fine-tune 模型、Foundry Agent、VM Hugging Face 模型分别建立 target 记录；Copilot Studio Agent 当前未开发完成，不作为 Foundry Evaluations 测试对象。
+3. 准备完整可对比 evaluation 数据集；项目目录只作为编辑工作区，最终测试数据注册为 Foundry project dataset。`quality_general`、`rag_pdf_groundedness`、`safety_baseline` 当前尚未创建，后续按用户指令创建。
+4. 配置 groundedness / citation / safety evaluator；独立 judge/scoring deployment `AIGovernTrustworthyEvaluationJudgeModel` 已创建，judge model 选择以评分准确性优先，不复用被测 target deployment。若具体 evaluator 要求内置安全模型或区域能力，则在 Foundry 中单独验证。
+5. 在已创建的 `AIGovernTrustworthyEvaluationDashboard` 中按 `target_id × test_item` 手动触发评估；该 Web App 复用现有 App Service Plan，网络 / VNet access 和自身 App logging 已配置。Foundry Evaluations 测试不经过 APIM，不写入 tracing-chain telemetry / LLM evidence，以免干扰步骤 7 / 8 tracing chain 输出。官方评分结果进入 Foundry evaluation run；dashboard 通过 SDK / API 动态读取 Foundry run，并默认选取每个 `target_id × test_item` 的最新 completed run 做横向对比。
 6. 将结果字段映射到 Domain 4 指标。
-7. 对 VM Hugging Face 模型的 evaluation 调用，通过 shared-observability 补写 Blob evidence 与 App Insights evidence，并与 VM 服务 trace 通过 `trace_id` 关联。
+7. 对 VM Hugging Face 模型的 evaluation 调用，直连 `http://10.1.1.8:11434/v1/chat/completions`；runner 将 VM 输出整理为 Foundry dataset evaluation 输入，并运行完整适用数据集。Blob 复用现有 `aigoverntrustworthysa` / `ai-invocation-archive`，只保存 Foundry run 不覆盖但有解释价值的 supplemental data：target response text、citation metadata、source document match、target direct-call error。Evaluation runner 身份使用 `.env.local.L4` 中的 `L4_EVALUATION_RUNNER_SPN_DISPLAY_NAME`。
 
 - **Copilot 可执行**：target 配置文件、评估数据集样例、运行脚本、结果解析脚本。
 - **可能需要用户操作**：Foundry UI 中创建 evaluation 或授权 evaluator。
-- **产物**：evaluation 需求设计、target 清单、样例数据集、结果解析脚本。
+- **产物**：evaluation 需求设计、target 清单、样例数据集、runner / dashboard Web App、Foundry run 链接、supplemental data schema。
 
 ### 步骤 11：Red Teaming 环境（PyRIT）
 

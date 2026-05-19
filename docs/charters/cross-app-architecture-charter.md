@@ -22,7 +22,7 @@
     后端使用HTTP的无状态的服务，使用Python，FastAPI开发，无需考虑高可靠，和性能要求。    
 5. 应用开发调用 API 时，不采用任何重试，或多链路。一旦调用失败，直接终止后续步骤，在界面，API返回，控制台等任何地方，返回错误信息，以供后续分析。
 6. 如果涉及到数据库，则系统涉及到的数据库都是 Azure SQL Database，认证方式是 Entra ID Only，认证方式是基于 Entra ID 上的 Enterprise Application 的 Application(client) ID 和 client secret。
-7. 应用程序基于 Entra ID 的 Enterprise Application 账户运行，用户使用Entra ID的用户账户登录，登录后，用户的账户不透传到数据层。应用程序使用 Client ID 及 App Secret访问数据层或AI服务。Redirect 要配置测试环境的地址，以及生产环境的地址。
+7. 应用程序基于 Entra ID 的 Enterprise Application 账户运行。应用程序使用 Client ID 及 App Secret访问数据层或AI服务。Redirect 要配置测试环境的地址，以及生产环境的地址。
 8. 测试直接在开发使用的 Linux 服务器上直接完成，开发服务器上直接安装必要的环境，测试时，应用服务都直接使用 bash 命令在开发机Linux服务器上开启服务，无需发布到部署环境。测试采用 HTTP。
 9. 开发代码的时候，对于环境变量的命名，有限参考并使用 .env.local.L4 文件中已有的变量。
 10. 每个代码文件顶端提供简单的注释

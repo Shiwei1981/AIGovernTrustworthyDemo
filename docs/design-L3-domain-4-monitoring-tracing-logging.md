@@ -26,6 +26,7 @@
 |---|---|
 | `docs/design-L2-domain-4-prerequisites.md` §2.4 | 本文的上层摘要入口 |
 | `docs/design-L2-domain-4-output-trustworthiness.md` | 定义 Domain 4 指标和查询诉求 |
+| `docs/design-L3-domain-4-app-insights-telemetry-fields.md` | 步骤 8 的 App Insights 字段合同、事件口径与验证范围 |
 | `docs/design-L3-domain-4-apim.md` | APIM gateway、policy、diagnostics 设计 |
 | `docs/design-L3-domain-4-shared-observability-component.md` | Python evidence 组件设计 |
 | `docs/design-L3-domain-4-rag-governance-service.md` | 步骤 2 的 RAG 服务 observability 实现 |
