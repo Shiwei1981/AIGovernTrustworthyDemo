@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>T1 Quality Cross-Model Mock</title>
+  <link rel="stylesheet" href="./mock-dashboard-style.css" />
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>T1 Quality Cross-Model View</h1>
+          <div class="subtle">Shared AI governance question set across RAG, Agent, Native, Fine-tune, and VM targets.</div>
+        </div>
+        <div class="mono">dataset: quality_general v1</div>
+      </div>
+      <div class="hero-bottom">
+        <span class="chip">relevance</span>
+        <span class="chip">coherence</span>
+        <span class="chip">fluency</span>
+        <span class="chip">similarity</span>
+        <span class="status success">same-source comparison enabled</span>
+      </div>
+    </section>
+
+    <section class="tabs">
+      <a class="tab" href="./mock-dashboard-index.html"><div class="tab-title">Mock Index</div><div class="tab-meta">Entry</div></a>
+      <a class="tab" href="./mock-dashboard-overview.html"><div class="tab-title">Overview</div><div class="tab-meta">Status + heatmap</div></a>
+      <a class="tab active" href="./mock-dashboard-quality.html"><div class="tab-title">T1 Quality</div><div class="tab-meta">Cross-model</div></a>
+      <a class="tab" href="./mock-dashboard-rag-contrast.html"><div class="tab-title">T2 RAG Contrast</div><div class="tab-meta">RAG vs Agent</div></a>
+      <a class="tab" href="./mock-dashboard-safety.html"><div class="tab-title">T3 Safety</div><div class="tab-meta">Risk</div></a>
+      <a class="tab" href="./mock-dashboard-target-rag-service.html"><div class="tab-title">Target Detail</div><div class="tab-meta">Drilldown</div></a>
+    </section>
+
+    <section class="grid four">
+      <div class="metric-card"><div class="metric-label">Avg relevance</div><div class="metric-value">0.87</div><div class="metric-foot">Top: RAG service</div></div>
+      <div class="metric-card"><div class="metric-label">Avg coherence</div><div class="metric-value">0.84</div><div class="metric-foot">Top: fine-tune</div></div>
+      <div class="metric-card"><div class="metric-label">Avg fluency</div><div class="metric-value">0.82</div><div class="metric-foot">VM trails on long answers</div></div>
+      <div class="metric-card"><div class="metric-label">five_pdf_derived winner</div><div class="metric-value">FT</div><div class="metric-foot">Strong same-source recall</div></div>
+    </section>
+
+    <div class="grid two" style="margin-top: 20px;">
+      <section class="card">
+        <h2 class="panel-title">Grouped quality scores</h2>
+        <div class="chart">
+          <div class="chart-title">Average evaluator score by target</div>
+          <div class="bars">
+            <div class="bar-row"><div>RAG service</div><div class="bar-track"><div class="bar-fill" style="width: 89%;"></div></div><div>0.89</div></div>
+            <div class="bar-row"><div>Foundry agent</div><div class="bar-track"><div class="bar-fill" style="width: 84%;"></div></div><div>0.84</div></div>
+            <div class="bar-row"><div>Fine-tune model</div><div class="bar-track"><div class="bar-fill" style="width: 86%;"></div></div><div>0.86</div></div>
+            <div class="bar-row"><div>Native model</div><div class="bar-track"><div class="bar-fill" style="width: 81%;"></div></div><div>0.81</div></div>
+            <div class="bar-row"><div>VM Phi-3</div><div class="bar-track"><div class="bar-fill warn" style="width: 67%;"></div></div><div>0.67</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="panel-title">Same-source quality focus</h2>
+        <div class="chart">
+          <div class="chart-title"><span class="mono">source_group = five_pdf_derived</span></div>
+          <div class="bars">
+            <div class="bar-row"><div>Fine-tune similarity</div><div class="bar-track"><div class="bar-fill success" style="width: 91%;"></div></div><div>0.91</div></div>
+            <div class="bar-row"><div>RAG relevance</div><div class="bar-track"><div class="bar-fill success" style="width: 90%;"></div></div><div>0.90</div></div>
+            <div class="bar-row"><div>Agent completeness</div><div class="bar-track"><div class="bar-fill" style="width: 78%;"></div></div><div>0.78</div></div>
+            <div class="bar-row"><div>Native coherence</div><div class="bar-track"><div class="bar-fill" style="width: 76%;"></div></div><div>0.76</div></div>
+            <div class="bar-row"><div>VM fluency</div><div class="bar-track"><div class="bar-fill warn" style="width: 61%;"></div></div><div>0.61</div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="grid two" style="margin-top: 20px;">
+      <section class="table-card">
+        <h2 class="panel-title">Mock sample detail table</h2>
+        <table class="table">
+          <tr><th>Sample</th><th>Question</th><th>Best target</th><th>Observed note</th></tr>
+          <tr><td><span class="mono">t1-003</span></td><td>What governance controls should exist for generative AI deployment?</td><td>RAG service</td><td>Highest relevance; answer cites deployment controls explicitly.</td></tr>
+          <tr><td><span class="mono">t1-005</span></td><td>How is accountability assigned across the AI lifecycle?</td><td>Fine-tune model</td><td>Strong similarity to ground truth on lifecycle phrasing.</td></tr>
+          <tr><td><span class="mono">t1-008</span></td><td>Why do organizations need AI incident response processes?</td><td>Foundry agent</td><td>Good structure, but source phrasing less consistent.</td></tr>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2 class="panel-title">Interpretation panel</h2>
+        <ul class="list">
+          <li>RAG service leads when the answer benefits from live retrieval over the five governance PDFs.</li>
+          <li>Fine-tune model is strongest on same-source prompts because its learned patterns align with the PDF corpus.</li>
+          <li>VM remains useful as a low-cost baseline but loses quality headroom on nuanced governance prompts.</li>
+          <li>Every grouped score should deep-link to the official Foundry run and row explanation instead of inventing custom reasoning.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

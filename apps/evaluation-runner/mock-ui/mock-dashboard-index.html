@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evaluation Dashboard Mock</title>
+  <link rel="stylesheet" href="./mock-dashboard-style.css" />
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>AIGovernTrustworthyEvaluationDashboard Mock</h1>
+          <div class="subtle">Prototype only. Every number and status on this page is example data for layout review, not live backend output.</div>
+        </div>
+        <div class="mono">prototype: mock-dashboard-index</div>
+      </div>
+      <div class="hero-bottom">
+        <span class="status warn">Prototype only</span>
+        <span class="chip">fake sample data</span>
+        <span class="chip">no live API calls</span>
+        <span class="chip">real UI: /dashboard/</span>
+      </div>
+    </section>
+
+    <section class="tabs">
+      <a class="tab active" href="./mock-dashboard-index.html">
+        <div class="tab-title">Mock Index</div>
+        <div class="tab-meta">Prototype entry</div>
+      </a>
+      <a class="tab" href="./mock-dashboard-overview.html">
+        <div class="tab-title">Mock Overview</div>
+        <div class="tab-meta">Visual prototype</div>
+      </a>
+      <a class="tab" href="./mock-dashboard-quality.html">
+        <div class="tab-title">Mock T1</div>
+        <div class="tab-meta">Visual prototype</div>
+      </a>
+      <a class="tab" href="./mock-dashboard-rag-contrast.html">
+        <div class="tab-title">Mock T2</div>
+        <div class="tab-meta">Visual prototype</div>
+      </a>
+      <a class="tab" href="./mock-dashboard-safety.html">
+        <div class="tab-title">Mock T3</div>
+        <div class="tab-meta">Visual prototype</div>
+      </a>
+      <a class="tab" href="./mock-dashboard-target-rag-service.html">
+        <div class="tab-title">Mock Target Detail</div>
+        <div class="tab-meta">Visual prototype</div>
+      </a>
+    </section>
+
+    <section class="table-card" style="margin-bottom:20px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:14px;">
+        <h2 class="panel-title" style="margin:0;">Prototype run matrix</h2>
+        <div class="subtle">This page keeps illustrative sample states only. The runnable live matrix is served separately at <span class="mono">/dashboard/</span>.</div>
+      </div>
+      <table class="run-grid">
+        <thead>
+          <tr>
+            <th>Target</th>
+            <th>T1 · General quality baseline</th>
+            <th>T2 · RAG groundedness / citation</th>
+            <th>T3 · Safety baseline</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>RAG Governance Service<br/><span class="subtle">rag_service</span></th>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: relevance 4.4 · coherence 4.6</div>
+              </div>
+            </td>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: groundedness 3.2 · source match 80%</div>
+              </div>
+            </td>
+            <td class="cell-warn">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status warn">Running</span><button class="btn" disabled>⏳ Running</button></div>
+                <div class="run-status-line">Example: waiting for content-safety aggregation</div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <th>Foundry Custom Agent<br/><span class="subtle">foundry_agent</span></th>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: relevance 4.2 · coherence 4.1</div>
+              </div>
+            </td>
+            <td class="cell-warn">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status warn">Queued</span><button class="btn" disabled>⏳ Running</button></div>
+                <div class="run-status-line">Example: next contrast run is pending</div>
+              </div>
+            </td>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: successful 5/5 · failed 0</div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <th>Foundry Native Model<br/><span class="subtle">foundry_native_model</span></th>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: fluency 4.0 · similarity 3.2</div>
+              </div>
+            </td>
+            <td class="cell-na">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status na">N/A</span></div>
+                <div class="run-status-line">No shared RAG knowledge source.</div>
+              </div>
+            </td>
+            <td class="cell-danger">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status fail">Failed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: model-side timeout during one sample</div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <th>Foundry Fine-tune Model<br/><span class="subtle">foundry_finetune_model</span></th>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: relevance 4.1 · similarity 4.0</div>
+              </div>
+            </td>
+            <td class="cell-na">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status na">N/A</span></div>
+                <div class="run-status-line">No shared RAG knowledge source.</div>
+              </div>
+            </td>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: successful 5/5 · failed 0</div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <th>VM Hugging Face Model<br/><span class="subtle">vm_huggingface_model</span></th>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: coherence 3.6 · fluency 4.0</div>
+              </div>
+            </td>
+            <td class="cell-na">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status na">N/A</span></div>
+                <div class="run-status-line">No shared RAG knowledge source.</div>
+              </div>
+            </td>
+            <td class="cell-ok">
+              <div class="run-cell">
+                <div class="run-cell-head"><span class="status success">Completed</span><button class="btn" disabled>▶ Run</button></div>
+                <div class="run-status-line">Example: successful 5/5 · failed 0</div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2 class="panel-title">Prototype pages</h2>
+      <p class="panel-subtitle">These mock pages remain visual-only references with example data.</p>
+      <div class="mock-links">
+        <a class="mock-link" href="./mock-dashboard-overview.html">
+          <h3>Evaluation Baseline Overview</h3>
+          <div class="subtle">Target × test heatmap, run status table, and key findings.</div>
+        </a>
+        <a class="mock-link" href="./mock-dashboard-quality.html">
+          <h3>T1 Quality Cross-Model View</h3>
+          <div class="subtle">Grouped score bars, same-source comparison, and sample rows.</div>
+        </a>
+        <a class="mock-link" href="./mock-dashboard-rag-contrast.html">
+          <h3>T2 RAG Groundedness Contrast</h3>
+          <div class="subtle">RAG service versus Foundry agent on groundedness and citations.</div>
+        </a>
+        <a class="mock-link" href="./mock-dashboard-safety.html">
+          <h3>T3 Safety Cross-Model View</h3>
+          <div class="subtle">Failure rate cards, category heatmap, and failed sample list.</div>
+        </a>
+        <a class="mock-link" href="./mock-dashboard-target-rag-service.html">
+          <h3>Target Detail View</h3>
+          <div class="subtle">Per-target drilldown prototype.</div>
+        </a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

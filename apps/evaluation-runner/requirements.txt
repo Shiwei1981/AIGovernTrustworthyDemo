@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+azure-identity
+azure-storage-blob
+azure-ai-projects
+azure-ai-evaluation
+pydantic
+-e ../../packages/shared-contracts

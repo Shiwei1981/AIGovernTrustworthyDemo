@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Target Detail — Foundry Custom Agent</title>
+  <link rel="stylesheet" href="./mock-dashboard-style.css" />
+</head>
+<body>
+  <div class="shell">
+
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>Target Detail — Foundry Custom Agent</h1>
+          <div class="subtle">T1 + T2 results for AIGovernTrustworthyDemoFoundryAgent. T3 is blocked pending official safety eval path.</div>
+        </div>
+        <div class="mono">target_type: foundry_agent</div>
+      </div>
+      <div class="hero-bottom">
+        <span class="status success">T1 completed</span>
+        <span class="status success">T2 completed</span>
+        <span class="status warn">T3 blocked</span>
+      </div>
+    </section>
+
+    <section class="tabs">
+      <a class="tab" href="./mock-dashboard-index.html"><div class="tab-title">Mock Index</div><div class="tab-meta">Entry</div></a>
+      <a class="tab" href="./mock-dashboard-overview.html"><div class="tab-title">Overview</div><div class="tab-meta">Heatmap</div></a>
+      <a class="tab" href="./mock-dashboard-quality.html"><div class="tab-title">T1 Quality</div><div class="tab-meta">Cross-model</div></a>
+      <a class="tab" href="./mock-dashboard-rag-contrast.html"><div class="tab-title">T2 RAG Contrast</div><div class="tab-meta">RAG vs Agent</div></a>
+      <a class="tab" href="./mock-dashboard-safety.html"><div class="tab-title">T3 Safety</div><div class="tab-meta">Risk</div></a>
+      <a class="tab active" href="./mock-dashboard-target-rag-service.html"><div class="tab-title">Target Detail</div><div class="tab-meta">Drilldown</div></a>
+    </section>
+
+    <section class="tabs" style="margin-bottom:20px;">
+      <a class="tab" href="./mock-dashboard-target-rag-service.html"><div class="tab-title">RAG Service</div><div class="tab-meta">rag_service</div></a>
+      <a class="tab active" href="./mock-dashboard-target-foundry-agent.html"><div class="tab-title">Foundry Agent</div><div class="tab-meta">foundry_agent</div></a>
+      <a class="tab" href="./mock-dashboard-target-native-model.html"><div class="tab-title">Native Model</div><div class="tab-meta">foundry_native_model</div></a>
+      <a class="tab" href="./mock-dashboard-target-finetune-model.html"><div class="tab-title">Fine-tune Model</div><div class="tab-meta">foundry_finetune_model</div></a>
+      <a class="tab" href="./mock-dashboard-target-vm-model.html"><div class="tab-title">VM Phi-3</div><div class="tab-meta">vm_huggingface_model</div></a>
+    </section>
+
+    <section class="grid three">
+      <div class="metric-card"><div class="metric-label">T1 avg quality score</div><div class="metric-value">0.84</div><div class="metric-foot">relevance 0.84 · coherence 0.82 · fluency 0.83</div></div>
+      <div class="metric-card"><div class="metric-label">T2 groundedness</div><div class="metric-value">0.85</div><div class="metric-foot">citation_present 50% · source_match 76%</div></div>
+      <div class="metric-card"><div class="metric-label">T3 safety</div><div class="metric-value">—</div><div class="metric-foot">Blocked — official path pending</div></div>
+    </section>
+
+    <div class="grid two" style="margin-top:20px;">
+      <section class="table-card">
+        <h2 class="panel-title">Per-test run summary</h2>
+        <table class="table">
+          <tr><th>Test item</th><th>Status</th><th>Primary metrics</th><th>Official run</th></tr>
+          <tr><td>T1 Quality</td><td><span class="status success">Completed</span></td><td>relevance 0.84 · coherence 0.82 · fluency 0.83</td><td><span class="mono">report_url</span></td></tr>
+          <tr><td>T2 RAG Contrast</td><td><span class="status success">Completed</span></td><td>groundedness 0.85 · citation_present 50%</td><td><span class="mono">report_url</span></td></tr>
+          <tr>
+            <td>T3 Safety</td>
+            <td><span class="status warn">Blocked</span></td>
+            <td colspan="2">Official ContentSafetyEvaluator path for Foundry agent target pending verification. Blocked status is recorded, not silently hidden.</td>
+          </tr>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2 class="panel-title">T2 citation note</h2>
+        <ul class="list">
+          <li>Agent reads the same 5 governance PDFs as the RAG service, so T2 contrast is meaningful.</li>
+          <li>Agent answers are often content-grounded but <span class="mono">citation_present=false</span> in ~50% of samples — the response text is correct but no explicit source field is returned.</li>
+          <li>Dashboard shows <span class="mono">citation_present=false</span> explicitly instead of treating it as unknown or blocked.</li>
+          <li><span class="mono">target_call_error</span> is unused unless the Foundry threads API itself fails.</li>
+        </ul>
+      </section>
+    </div>
+
+    <section class="table-card" style="margin-top:20px;">
+      <h2 class="panel-title">Mock sample records</h2>
+      <table class="table">
+        <tr><th>Sample</th><th>Test</th><th>Prompt</th><th>Response excerpt</th><th>citation_present</th><th>Evaluator score</th></tr>
+        <tr>
+          <td><span class="mono">t1-003</span></td><td>T1</td>
+          <td>What governance controls should exist for generative AI deployment?</td>
+          <td>Governance controls should include pre-deployment risk assessments, incident response plans, and monitoring policies.</td>
+          <td>—</td>
+          <td>relevance 0.87</td>
+        </tr>
+        <tr>
+          <td><span class="mono">t2-002</span></td><td>T2</td>
+          <td>What does NIST AI 100-1 say about lifecycle governance?</td>
+          <td>NIST AI 100-1 emphasises governance throughout the AI lifecycle including design, deployment, and monitoring stages.</td>
+          <td><span class="status warn" style="font-size:11px;">false</span></td>
+          <td>groundedness 0.83</td>
+        </tr>
+        <tr>
+          <td><span class="mono">t2-007</span></td><td>T2</td>
+          <td>How does the EU AI Act classify high-risk AI systems?</td>
+          <td>The EU AI Act classifies high-risk systems based on use-case domains and potential societal impact, requiring conformity assessments.</td>
+          <td><span class="status success" style="font-size:11px;">true</span></td>
+          <td>groundedness 0.91</td>
+        </tr>
+      </table>
+    </section>
+
+    <section class="card" style="margin-top:20px;">
+      <h2 class="panel-title">Target-level conclusion</h2>
+      <p class="subtle" style="margin-bottom:12px;">
+        Threshold rules applied to aggregated metrics. <strong>Evaluator reason</strong> excerpts are from the judge LLM's
+        <code style="font-size:11px;">{metric}_reason</code> field on worst-scoring rows.
+      </p>
+      <table class="table conclusion-table">
+        <thead>
+          <tr>
+            <th>Dimension</th><th>Metric</th><th>Warn / Fail threshold</th><th>Observed</th><th>Verdict</th>
+            <th>Evaluator reason excerpt <span class="subtle">(worst sample)</span></th><th>Data source</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>T1 Quality</td><td><code>relevance_mean</code></td><td>&lt; 0.75 warn · &lt; 0.60 fail</td><td>0.84</td>
+            <td><span class="status success">Pass</span></td>
+            <td>
+              <div class="reason-excerpt">
+                <div class="reason-meta">sample t1-005 · score 0.71</div>
+                "Response covers the main governance theme but does not engage with the specific policy instrument named in the query. Partially relevant."
+              </div>
+            </td>
+            <td><span class="source-badge foundry">foundry_row_reason</span></td>
+          </tr>
+          <tr>
+            <td>T2 Groundedness</td><td><code>groundedness_mean</code></td><td>&lt; 0.80 warn · &lt; 0.65 fail</td><td>0.85</td>
+            <td><span class="status success">Pass</span></td>
+            <td>
+              <div class="reason-excerpt">
+                <div class="reason-meta">sample t2-002 · score 0.78</div>
+                "The lifecycle governance claim broadly matches context but adds interpretive language not present in the source document. Partially ungrounded."
+              </div>
+            </td>
+            <td><span class="source-badge foundry">foundry_row_reason</span></td>
+          </tr>
+          <tr>
+            <td>T2 Citation</td><td><code>citation_present_rate</code></td><td>&lt; 0.70 warn · &lt; 0.50 fail</td><td>0.50</td>
+            <td><span class="status warn">Warn</span></td>
+            <td class="subtle">Computed from <code>SupplementalSampleRecord.source_document_match.citation_present</code>. Agent answers are grounded but explicit source field absent in ~50% of responses.</td>
+            <td><span class="source-badge blob">supplemental_blob</span></td>
+          </tr>
+          <tr>
+            <td>T3 Safety</td><td><code>safety_fail_rate</code></td><td>&gt; 3% warn · &gt; 7% fail</td><td>—</td>
+            <td><span class="status warn">Blocked</span></td>
+            <td class="subtle">Official <code>ContentSafetyEvaluator</code> path for Foundry agent target not yet verified. No score recorded.</td>
+            <td><span class="source-badge combined">pending</span></td>
+          </tr>
+          <tr>
+            <td>Errors</td><td><code>target_call_error_count</code></td><td>&gt; 0 warn · &gt; 3 fail</td><td>0</td>
+            <td><span class="status success">Pass</span></td>
+            <td class="subtle">Counted from <code>SupplementalSampleRecord.target_call_error</code> in Blob.</td>
+            <td><span class="source-badge blob">supplemental_blob</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+  </div>
+</body>
+</html>

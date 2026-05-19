@@ -1,0 +1,61 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workbookDisplayName": {
+      "type": "string",
+      "defaultValue": "AIGovernTrustworthyDemo Step 8 Tracing Showcase",
+      "metadata": {
+        "description": "Friendly display name for the deployed workbook."
+      }
+    },
+    "workbookSourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Application Insights component that owns the workbook."
+      }
+    },
+    "workbookId": {
+      "type": "string",
+      "defaultValue": "[newGuid()]",
+      "metadata": {
+        "description": "Stable GUID for the workbook resource."
+      }
+    },
+    "serializedData": {
+      "type": "string",
+      "metadata": {
+        "description": "Serialized Azure Workbook JSON payload."
+      }
+    },
+    "workbookType": {
+      "type": "string",
+      "defaultValue": "workbook",
+      "metadata": {
+        "description": "Workbook gallery category."
+      }
+    }
+  },
+  "resources": [
+    {
+      "name": "[parameters('workbookId')]",
+      "type": "Microsoft.Insights/workbooks",
+      "location": "[resourceGroup().location]",
+      "kind": "shared",
+      "apiVersion": "2018-06-17-preview",
+      "properties": {
+        "displayName": "[parameters('workbookDisplayName')]",
+        "serializedData": "[parameters('serializedData')]",
+        "version": "1.0",
+        "sourceId": "[parameters('workbookSourceId')]",
+        "category": "[parameters('workbookType')]"
+      }
+    }
+  ],
+  "outputs": {
+    "workbookResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/workbooks', parameters('workbookId'))]"
+    }
+  }
+}

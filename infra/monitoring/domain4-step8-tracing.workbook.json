@@ -1,0 +1,282 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Domain 4 Step 8 Tracing Showcase\n\nThis workbook packages the Step 8 App Insights demo queries for tracing capability. Use Q1 or Q3 to find a sample trace, then paste it into the **TraceId** parameter to drive Q2.\n\nThis workbook is intentionally tracing-demo oriented. It does not depend on troubleshooting-field normalization."
+      },
+      "name": "text-overview"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "c8283e91-1dfa-49be-a9fd-1db5ee7cdb44",
+            "version": "KqlParameterItem/1.0",
+            "name": "TraceId",
+            "type": 1,
+            "description": "Paste a trace_id from Q1 or Q3 to drive Q2.",
+            "value": ""
+          }
+        ],
+        "style": "above",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "parameters-traceid"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Visual Overview\nOpen this section first if you want quick tracing graphics. Then use the tables below for drill-down."
+      },
+      "name": "text-visual-overview"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "union isfuzzy=true requests, dependencies, traces\n| where timestamp > ago(24h)\n| where isnotempty(operation_Id)\n| summarize trace_count = dcount(operation_Id) by bin(timestamp, 1h)\n| order by timestamp asc\n| render timechart",
+        "size": 0,
+        "title": "Tracing Activity Trend (Last 24 Hours)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "chart-trace-trend"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp > ago(24h)\n| where cloud_RoleName == \"AIGovernTrustworthyDemoAPIM\"\n| extend route = extract(\n    \"/(tier1|tier2|rag|native-model|finetune-model|vm-model|foundry-agent|copilot-studio)\",\n    0,\n    tostring(url)\n)\n| where isnotempty(route)\n| summarize calls = count() by route\n| order by calls desc\n| render barchart",
+        "size": 0,
+        "title": "APIM Route Volume (Last 24 Hours)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "chart-apim-route-volume"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp > ago(7d)\n| where message in (\"AIGovernTrustworthyLLMEvidence\", \"AIGovernTrustworthyVMModelTrace\")\n| extend target_type = coalesce(\n    tostring(customDimensions[\"aigov.target.type\"]),\n    tostring(customDimensions[\"target_type\"]),\n    \"unknown\"\n)\n| summarize evidence_count = count() by target_type\n| order by evidence_count desc\n| render piechart",
+        "size": 0,
+        "title": "Evidence Coverage by Target Type (Last 7 Days)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "chart-evidence-coverage"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Q1 - Recent Trace Overview\nShows recent trace groups across `requests`, `dependencies`, and `traces`. Use it to prove there are active traces and to find a sample `trace_id` for Q2."
+      },
+      "name": "text-q1"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "union isfuzzy=true requests, dependencies, traces\n| where timestamp > ago(24h)\n| extend trace_id = operation_Id\n| where isnotempty(trace_id)\n| summarize\n    start_time = min(timestamp),\n    end_time = max(timestamp),\n    items_count = count(),\n    services_involved = dcountif(cloud_RoleName, isnotempty(cloud_RoleName)),\n    has_failure = maxif(1, success == false),\n    sample_roles = make_set(cloud_RoleName, 5)\n  by trace_id\n| extend\n    duration_ms = datetime_diff(\"millisecond\", end_time, start_time),\n    success_or_status = iff(has_failure == 1, \"has_failure\", \"all_success_or_unknown\")\n| order by start_time desc",
+        "size": 0,
+        "title": "Q1 Recent Trace Overview",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "query-q1"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Q2 - Single Trace Chain Detail\nPaste a value into **TraceId** above, then use this query to show the ordered call chain for one request."
+      },
+      "name": "text-q2"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let trace_id = trim(\" \", '{TraceId}');\nunion isfuzzy=true requests, dependencies, traces\n| where timestamp > ago(7d)\n| where isnotempty(trace_id)\n| where operation_Id == trace_id\n| project\n    timestamp,\n    trace_id = operation_Id,\n    itemType,\n    cloud_RoleName,\n    name,\n    message,\n    id,\n    operation_ParentId,\n    resultCode,\n    success,\n    duration\n| order by timestamp asc",
+        "size": 0,
+        "title": "Q2 Single Trace Chain Detail",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "query-q2"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Q2a - Single Trace Sequence Graph\nThis is the minimum viable tracing call-chain graph in App Insights. It orders all rows for one `trace_id` by time and links each step to the next step."
+      },
+      "name": "text-q2a-sequence"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let trace_id = trim(\" \", '{TraceId}');\nlet ordered = union isfuzzy=true requests, dependencies, traces\n| where timestamp > ago(7d)\n| where isnotempty(trace_id)\n| where operation_Id == trace_id\n| extend component_full = coalesce(cloud_RoleName, \"unknown\")\n| extend component_short = case(\n    component_full has \"APIM\", \"APIM\",\n    component_full has \"Tier1\", \"Tier1\",\n    component_full has \"Tier2\", \"Tier2\",\n    component_full has \"RAG\", \"RAG\",\n    component_full has \"VMModel\" or component_full has \"VM\", \"VMModel\",\n    component_full has \"shared_observability\", \"Evidence\",\n    substring(replace_string(replace_string(component_full, \"AIGovernTrustworthyDemo.\", \"\"), \"AIGovernTrustworthy\", \"\"), 0, 18)\n)\n| extend step_name = coalesce(name, message, itemType)\n| extend step_short = case(\n    step_name has \"AIGovernTrustworthyLLMEvidence\", \"LLM Evidence\",\n    step_name has \"AIGovernTrustworthyVMModelTrace\", \"VM Evidence\",\n    substring(step_name, 0, 36)\n)\n| extend duration_ms = iff(isnotempty(duration), tolong(duration), long(null))\n| project timestamp, component_short, component_full, itemType, step_name, step_short, duration_ms, resultCode, success\n| order by timestamp asc\n| serialize step = row_number();\nlet nodes = ordered\n| project\n    nodeId = strcat(\"seq:\", tostring(step)),\n    nodeTitle = strcat(tostring(step), \". \", component_short),\n    nodeSubtitle = strcat(itemType, \" | \", step_short),\n    nodeKind = itemType,\n    duration_ms,\n    edgeSourceId = \"\",\n    edgeTargetId = \"\",\n    edgeLabel = \"\",\n    edgeWeight = long(null);\nlet links = ordered\n| where step > 1\n| project\n    nodeId = \"\",\n    nodeTitle = \"\",\n    nodeSubtitle = \"\",\n    nodeKind = \"\",\n    duration_ms = long(null),\n    edgeSourceId = strcat(\"seq:\", tostring(step - 1)),\n    edgeTargetId = strcat(\"seq:\", tostring(step)),\n    edgeLabel = strcat(\"step \", tostring(step)),\n    edgeWeight = 1;\nnodes\n| union links",
+        "size": 0,
+        "title": "Q2a Single Trace Sequence Graph",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "graph",
+        "graphSettings": {
+          "type": 0,
+          "topContent": {
+            "columnMatch": "nodeKind",
+            "formatter": 1
+          },
+          "centerContent": {
+            "columnMatch": "nodeTitle",
+            "formatter": 1
+          },
+          "bottomContent": {
+            "columnMatch": "nodeSubtitle",
+            "formatter": 1
+          },
+          "nodeIdField": "nodeId",
+          "sourceIdField": "edgeSourceId",
+          "targetIdField": "edgeTargetId",
+          "edgeLabel": "edgeLabel",
+          "graphOrientation": 1,
+          "showOrientationToggles": true,
+          "nodeSize": null,
+          "staticNodeSize": 180,
+          "colorSettings": {
+            "nodeColorField": "nodeKind",
+            "type": 1,
+            "colorPalette": "pastel"
+          },
+          "hivesMargin": 5
+        }
+      },
+      "name": "graph-q2a-sequence"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Q2b - Single Trace Parent/Child Topology Graph\nThis is the stronger App Insights topology attempt. It uses `id` as the span node and `operation_ParentId` as the parent edge. If a parent span is missing from the query result, the node is attached to a synthetic trace root."
+      },
+      "name": "text-q2b-topology"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let trace_id = trim(\" \", '{TraceId}');\nlet raw = union isfuzzy=true requests, dependencies, traces\n| where timestamp > ago(7d)\n| where isnotempty(trace_id)\n| where operation_Id == trace_id\n| extend component_full = coalesce(cloud_RoleName, \"unknown\")\n| extend component_short = case(\n    component_full has \"APIM\", \"APIM\",\n    component_full has \"Tier1\", \"Tier1\",\n    component_full has \"Tier2\", \"Tier2\",\n    component_full has \"RAG\", \"RAG\",\n    component_full has \"VMModel\" or component_full has \"VM\", \"VMModel\",\n    component_full has \"shared_observability\", \"Evidence\",\n    substring(replace_string(replace_string(component_full, \"AIGovernTrustworthyDemo.\", \"\"), \"AIGovernTrustworthy\", \"\"), 0, 18)\n)\n| extend step_name = coalesce(name, message, itemType)\n| extend step_short = case(\n    step_name has \"AIGovernTrustworthyLLMEvidence\", \"LLM Evidence\",\n    step_name has \"AIGovernTrustworthyVMModelTrace\", \"VM Evidence\",\n    substring(step_name, 0, 36)\n)\n| extend raw_id = tostring(id)\n| extend fallback_id = strcat(itemType, \":\", tostring(hash(strcat(timestamp, component_full, step_name))))\n| extend nodeId = iff(isempty(raw_id), fallback_id, raw_id)\n| extend parentId = tostring(operation_ParentId)\n| extend duration_ms = iff(isnotempty(duration), tolong(duration), long(null))\n| project timestamp, nodeId, parentId, component_short, component_full, itemType, step_name, step_short, duration_ms, resultCode, success;\nlet span_ids = toscalar(raw | summarize make_set(nodeId));\nlet root = print trace_id = trace_id\n| where isnotempty(trace_id)\n| project\n    nodeId = strcat(\"trace:\", trace_id),\n    nodeTitle = \"Trace Root\",\n    nodeSubtitle = strcat(substring(trace_id, 0, 12), \"...\"),\n    nodeKind = \"trace\",\n    duration_ms = long(null),\n    edgeSourceId = \"\",\n    edgeTargetId = \"\",\n    edgeLabel = \"\",\n    edgeWeight = long(null);\nlet nodes = raw\n| project\n    nodeId,\n    nodeTitle = component_short,\n    nodeSubtitle = strcat(itemType, \" | \", step_short),\n    nodeKind = itemType,\n    duration_ms,\n    edgeSourceId = \"\",\n    edgeTargetId = \"\",\n    edgeLabel = \"\",\n    edgeWeight = long(null);\nlet parent_edges = raw\n| where isnotempty(parentId) and set_has_element(span_ids, parentId)\n| extend targetNodeId = nodeId\n| project\n    nodeId = \"\",\n    nodeTitle = \"\",\n    nodeSubtitle = \"\",\n    nodeKind = \"\",\n    duration_ms = long(null),\n    edgeSourceId = parentId,\n    edgeTargetId = targetNodeId,\n    edgeLabel = \"parent\",\n    edgeWeight = 1;\nlet root_edges = raw\n| where isempty(parentId) or not(set_has_element(span_ids, parentId))\n| extend targetNodeId = nodeId\n| project\n    nodeId = \"\",\n    nodeTitle = \"\",\n    nodeSubtitle = \"\",\n    nodeKind = \"\",\n    duration_ms = long(null),\n    edgeSourceId = strcat(\"trace:\", trace_id),\n    edgeTargetId = targetNodeId,\n    edgeLabel = \"root\",\n    edgeWeight = 1;\nroot\n| union nodes\n| union parent_edges\n| union root_edges",
+        "size": 0,
+        "title": "Q2b Single Trace Parent/Child Topology Graph",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "graph",
+        "graphSettings": {
+          "type": 0,
+          "topContent": {
+            "columnMatch": "nodeKind",
+            "formatter": 1
+          },
+          "centerContent": {
+            "columnMatch": "nodeTitle",
+            "formatter": 1
+          },
+          "bottomContent": {
+            "columnMatch": "nodeSubtitle",
+            "formatter": 1
+          },
+          "nodeIdField": "nodeId",
+          "sourceIdField": "edgeSourceId",
+          "targetIdField": "edgeTargetId",
+          "edgeLabel": "edgeLabel",
+          "graphOrientation": 1,
+          "showOrientationToggles": true,
+          "nodeSize": null,
+          "staticNodeSize": 180,
+          "colorSettings": {
+            "nodeColorField": "nodeKind",
+            "type": 1,
+            "colorPalette": "pastel"
+          },
+          "hivesMargin": 5
+        }
+      },
+      "name": "graph-q2b-topology"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Q3 - APIM Route-to-Backend Trace Proof\nSummarizes traced calls by APIM route and returns a sample `trace_id` that can be copied into Q2."
+      },
+      "name": "text-q3"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp > ago(24h)\n| where cloud_RoleName == \"AIGovernTrustworthyDemoAPIM\"\n| extend route = extract(\n    \"/(tier1|tier2|rag|native-model|finetune-model|vm-model|foundry-agent|copilot-studio)\",\n    0,\n    tostring(url)\n)\n| where isnotempty(route)\n| summarize\n    calls = count(),\n    success_count = countif(success == true),\n    avg_duration_ms = round(avg(duration), 0),\n    p95_duration_ms = round(percentile(duration, 95), 0),\n    sample_trace_id = take_any(operation_Id)\n  by route\n| extend success_rate_pct = round(100.0 * success_count / calls, 1)\n| project route, calls, success_rate_pct, avg_duration_ms, p95_duration_ms, sample_trace_id\n| order by calls desc",
+        "size": 0,
+        "title": "Q3 APIM Route-to-Backend Trace Proof",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "query-q3"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Q4 - Evidence-Linked Trace Proof\nShows shared-observability evidence rows tied back to `trace_id`, `archive_id`, and `payload_ref`."
+      },
+      "name": "text-q4"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp > ago(24h)\n| where message == \"AIGovernTrustworthyLLMEvidence\"\n| extend\n    trace_id = operation_Id,\n    service_name = tostring(customDimensions[\"service.name\"]),\n    source_type = tostring(customDimensions[\"aigov.source.type\"]),\n    target_type = tostring(customDimensions[\"aigov.target.type\"]),\n    target_id = tostring(customDimensions[\"aigov.target.id\"]),\n    response_id = tostring(customDimensions[\"gen_ai.response.id\"]),\n    archive_id = tostring(customDimensions[\"aigov.archive.id\"]),\n    payload_ref = tostring(customDimensions[\"aigov.payload.ref\"]),\n    status = tostring(customDimensions[\"status\"])\n| project\n    timestamp,\n    trace_id,\n    service_name,\n    source_type,\n    target_type,\n    target_id,\n    response_id,\n    archive_id,\n    payload_ref,\n    status\n| order by timestamp desc",
+        "size": 0,
+        "title": "Q4 Evidence-Linked Trace Proof",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "query-q4"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Q5 - Cross-Component Telemetry Coverage\nThe first query shows platform telemetry coverage by component. The second shows evidence-style events by target type."
+      },
+      "name": "text-q5"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "union isfuzzy=true requests, dependencies, traces\n| where timestamp > ago(7d)\n| where isnotempty(cloud_RoleName)\n| summarize\n    requests_count = countif(itemType == \"request\"),\n    dependencies_count = countif(itemType == \"dependency\"),\n    traces_count = countif(itemType == \"trace\"),\n    total = count(),\n    latest_telemetry = max(timestamp)\n  by cloud_RoleName\n| order by total desc",
+        "size": 0,
+        "title": "Q5a Cross-Component Platform Telemetry Coverage",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "query-q5a"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp > ago(7d)\n| where message in (\"AIGovernTrustworthyLLMEvidence\", \"AIGovernTrustworthyVMModelTrace\")\n| extend target_type = coalesce(\n    tostring(customDimensions[\"aigov.target.type\"]),\n    tostring(customDimensions[\"target_type\"])\n)\n| summarize evidence_count = count(), latest = max(timestamp) by message, target_type\n| order by evidence_count desc",
+        "size": 0,
+        "title": "Q5b Evidence Event Coverage",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      },
+      "name": "query-q5b"
+    }
+  ],
+  "styleSettings": {},
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

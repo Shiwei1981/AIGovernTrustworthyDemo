@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evaluation Dashboard</title>
+  <link rel="stylesheet" href="./dashboard.css" />
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>AIGovernTrustworthyEvaluationDashboard</h1>
+          <div class="subtle">Live evaluation matrix for the single deployed dashboard + evaluation runner app. All target rows and statuses are loaded asynchronously from the backend.</div>
+        </div>
+        <div class="mono" id="service-name">service: loading...</div>
+      </div>
+      <div class="hero-bottom">
+        <span class="status na" id="service-status">Loading live backend...</span>
+        <span class="chip" id="refresh-chip">refresh: --</span>
+        <span class="chip" id="updated-chip">updated: --</span>
+      </div>
+    </section>
+
+    <section class="tabs">
+      <a class="tab active" href="/dashboard/">
+        <div class="tab-title">Run Matrix</div>
+        <div class="tab-meta">Launch + status</div>
+      </a>
+      <a id="tab-overview" class="tab disabled" href="/dashboard/" aria-disabled="true">
+        <div class="tab-title">Overview</div>
+        <div class="tab-meta">Status + heatmap</div>
+      </a>
+      <a id="tab-t1" class="tab disabled" href="/dashboard/" aria-disabled="true">
+        <div class="tab-title">T1 Quality</div>
+        <div class="tab-meta">Cross-model</div>
+      </a>
+      <a id="tab-t2" class="tab disabled" href="/dashboard/" aria-disabled="true">
+        <div class="tab-title">T2 RAG Contrast</div>
+        <div class="tab-meta">RAG vs Agent</div>
+      </a>
+      <a id="tab-t3" class="tab disabled" href="/dashboard/" aria-disabled="true">
+        <div class="tab-title">T3 Safety</div>
+        <div class="tab-meta">Risk</div>
+      </a>
+      <a id="tab-target" class="tab disabled" href="/dashboard/" aria-disabled="true">
+        <div class="tab-title">Target Detail</div>
+        <div class="tab-meta">Drilldown</div>
+      </a>
+    </section>
+
+    <section class="grid four" id="summary-cards">
+      <div class="metric-card">
+        <div class="metric-label">Runnable combinations</div>
+        <div class="metric-value">--</div>
+        <div class="metric-foot">Loading matrix...</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Completed runs</div>
+        <div class="metric-value">--</div>
+        <div class="metric-foot">Loading matrix...</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Active runs</div>
+        <div class="metric-value">--</div>
+        <div class="metric-foot">Loading matrix...</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Failed or blocked</div>
+        <div class="metric-value">--</div>
+        <div class="metric-foot">Loading matrix...</div>
+      </div>
+    </section>
+
+    <section class="table-card" style="margin-top:20px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:14px;">
+        <h2 class="panel-title" style="margin:0;">Evaluation run matrix</h2>
+        <div class="subtle" id="matrix-note">Loading targets and latest run state...</div>
+      </div>
+      <div id="matrix-host" class="subtle">Loading live dashboard...</div>
+    </section>
+
+    <section class="card" style="margin-top:20px;">
+      <h2 class="panel-title">Related endpoints</h2>
+      <p class="panel-subtitle">Live reports are generated under <span class="mono">/evaluations/&lt;test_run_id&gt;/...</span>. This published UI only links to live dashboard and API surfaces.</p>
+      <div class="mock-links">
+        <a class="mock-link" href="/health">
+          <h3>Health JSON</h3>
+          <div class="subtle">Runner status, configured datasets, and target count.</div>
+        </a>
+        <a class="mock-link" href="/api/dashboard/matrix">
+          <h3>Matrix JSON</h3>
+          <div class="subtle">Target and test-item cell state used by this page.</div>
+        </a>
+        <a class="mock-link" href="/api/targets">
+          <h3>Targets JSON</h3>
+          <div class="subtle">Published target registry used to build the live matrix.</div>
+        </a>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const TEST_TITLES = {
+      T1: 'T1 · General quality baseline',
+      T2: 'T2 · RAG groundedness / citation',
+      T3: 'T3 · Safety baseline'
+    };
+
+    let refreshHandle = null;
+    let refreshSeconds = 5;
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => toast.classList.remove('show'), 3200);
+    }
+
+    function renderSummary(payload, health) {
+      const runnable = payload.cells.filter((cell) => cell.can_run || ['queued', 'running'].includes(cell.status));
+      const completed = payload.cells.filter((cell) => cell.status === 'completed');
+      const active = payload.cells.filter((cell) => ['queued', 'running'].includes(cell.status));
+      const failed = payload.cells.filter((cell) => ['failed', 'blocked'].includes(cell.status));
+      const idle = payload.cells.filter((cell) => cell.status === 'idle');
+
+      document.getElementById('service-name').textContent = `service: ${health?.service || 'unavailable'}`;
+      const serviceStatus = document.getElementById('service-status');
+      serviceStatus.className = `status ${health?.status === 'ok' ? 'success' : 'danger'}`;
+      serviceStatus.textContent = health?.status === 'ok' ? 'Live backend connected' : 'Backend unavailable';
+      document.getElementById('refresh-chip').textContent = `refresh: ${payload.refresh_seconds}s`;
+      document.getElementById('updated-chip').textContent = `updated: ${new Date().toLocaleTimeString()}`;
+      document.getElementById('matrix-note').textContent =
+        `${payload.targets.length} targets loaded · ${runnable.length} runnable cells · ${idle.length} idle`;
+
+      document.getElementById('summary-cards').innerHTML = `
+        <div class="metric-card">
+          <div class="metric-label">Runnable combinations</div>
+          <div class="metric-value">${runnable.length}</div>
+          <div class="metric-foot">${payload.targets.length} targets × ${payload.test_items.length} test items</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Completed runs</div>
+          <div class="metric-value">${completed.length}</div>
+          <div class="metric-foot">Cells with the latest run completed</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Active runs</div>
+          <div class="metric-value">${active.length}</div>
+          <div class="metric-foot">Queued or running cells refresh automatically</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Failed or blocked</div>
+          <div class="metric-value">${failed.length}</div>
+          <div class="metric-foot">Most recent run needs inspection</div>
+        </div>
+      `;
+    }
+
+    function latestRunRecord(cells, predicate = () => true) {
+      let latest = null;
+      for (const cell of cells) {
+        if (!cell.latest_run || !predicate(cell)) {
+          continue;
+        }
+        if (!latest || (cell.latest_run.created_at || '') > (latest.created_at || '')) {
+          latest = cell.latest_run;
+        }
+      }
+      return latest;
+    }
+
+    function updateTabLink(tabId, href) {
+      const tab = document.getElementById(tabId);
+      if (!tab) {
+        return;
+      }
+      if (href) {
+        tab.href = href;
+        tab.classList.remove('disabled');
+        tab.removeAttribute('aria-disabled');
+      } else {
+        tab.href = '/dashboard/';
+        tab.classList.add('disabled');
+        tab.setAttribute('aria-disabled', 'true');
+      }
+    }
+
+    function renderLiveTabs(payload) {
+      const latestAny = latestRunRecord(payload.cells);
+      const latestT1 = latestRunRecord(payload.cells, (cell) => cell.test_item === 'T1');
+      const latestT2 = latestRunRecord(payload.cells, (cell) => cell.test_item === 'T2');
+      const latestT3 = latestRunRecord(payload.cells, (cell) => cell.test_item === 'T3');
+
+      updateTabLink('tab-overview', latestAny?.overview_url || '');
+      updateTabLink('tab-t1', latestT1?.quality_url || '');
+      updateTabLink('tab-t2', latestT2?.quality_url || '');
+      updateTabLink('tab-t3', latestT3?.quality_url || '');
+      updateTabLink('tab-target', latestAny?.target_detail_url || '');
+    }
+
+    function cellClass(cell) {
+      if (cell.status === 'na') return 'cell-na';
+      if (cell.status === 'completed') return 'cell-ok';
+      if (cell.status === 'failed' || cell.status === 'blocked') return 'cell-danger';
+      if (cell.status === 'queued' || cell.status === 'running') return 'cell-warn';
+      return '';
+    }
+
+    function runLinks(latestRun) {
+      if (!latestRun) {
+        return '';
+      }
+      const links = [
+        `<a href="${escapeHtml(latestRun.overview_url)}">Overview</a>`,
+        `<a href="${escapeHtml(latestRun.quality_url)}">Report</a>`,
+        `<a href="${escapeHtml(latestRun.target_detail_url)}">Target</a>`
+      ];
+      if (latestRun.report_url) {
+        links.push(`<a href="${escapeHtml(latestRun.report_url)}" target="_blank" rel="noreferrer">Foundry</a>`);
+      } else if (latestRun.studio_url) {
+        links.push(`<a href="${escapeHtml(latestRun.studio_url)}" target="_blank" rel="noreferrer">Studio</a>`);
+      }
+      return links.join('');
+    }
+
+    function runButton(cell) {
+      if (!cell.can_run && cell.status === 'na') {
+        return '';
+      }
+      const running = ['queued', 'running'].includes(cell.status);
+      const state = running ? 'running' : '';
+      const disabled = cell.can_run ? '' : 'disabled';
+      const label = running ? '⏳ Running' : '▶ Run';
+      return `<button class="btn run-trigger" data-target="${escapeHtml(cell.target_id)}" data-test="${escapeHtml(cell.test_item)}" data-state="${state}" ${disabled}>${label}</button>`;
+    }
+
+    function renderMatrix(payload) {
+      const cellsByKey = new Map(
+        payload.cells.map((cell) => [`${cell.target_id}::${cell.test_item}`, cell])
+      );
+      const header = payload.test_items
+        .map((testItem) => `<th>${escapeHtml(TEST_TITLES[testItem] || testItem)}</th>`)
+        .join('');
+      const rows = payload.targets.map((target) => {
+        const cells = payload.test_items.map((testItem) => {
+          const cell = cellsByKey.get(`${target.target_id}::${testItem}`);
+          if (!cell) {
+            return '<td><div class="run-cell"><div class="run-status-line">Missing cell payload.</div></div></td>';
+          }
+          return `
+            <td class="${cellClass(cell)}">
+              <div class="run-cell">
+                <div class="run-cell-head">
+                  <span class="status ${escapeHtml(cell.status_class || 'na')}">${escapeHtml(cell.status_label || cell.status)}</span>
+                  ${runButton(cell)}
+                </div>
+                <div class="run-status-line">${escapeHtml(cell.summary || 'No run launched yet.')}</div>
+                <div class="run-links">${runLinks(cell.latest_run)}</div>
+              </div>
+            </td>
+          `;
+        }).join('');
+        return `
+          <tr>
+            <th>${escapeHtml(target.display_name || target.target_id)}<br/><span class="subtle">${escapeHtml(target.target_type)}</span></th>
+            ${cells}
+          </tr>
+        `;
+      }).join('');
+
+      document.getElementById('matrix-host').innerHTML = `
+        <table class="run-grid">
+          <thead>
+            <tr>
+              <th>Target</th>
+              ${header}
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+
+      for (const button of document.querySelectorAll('.run-trigger')) {
+        button.addEventListener('click', async () => {
+          await triggerRun(button.dataset.target, button.dataset.test, button);
+        });
+      }
+    }
+
+    async function triggerRun(targetId, testItem, button) {
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.dataset.state = 'running';
+      button.textContent = '⏳ Starting...';
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(targetId)}/${encodeURIComponent(testItem)}`, {
+          method: 'POST'
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || `HTTP ${response.status}`);
+        }
+        showToast(`▶ Launched ${testItem} for ${targetId}`);
+        await refreshDashboard(false);
+      } catch (error) {
+        button.disabled = false;
+        button.dataset.state = '';
+        button.textContent = originalText;
+        showToast(`Run rejected: ${error.message}`);
+      }
+    }
+
+    async function refreshDashboard(showError) {
+      try {
+        const [matrixResponse, healthResponse] = await Promise.all([
+          fetch('/api/dashboard/matrix'),
+          fetch('/health')
+        ]);
+        if (!matrixResponse.ok) {
+          throw new Error(`Matrix HTTP ${matrixResponse.status}`);
+        }
+        const payload = await matrixResponse.json();
+        const health = healthResponse.ok ? await healthResponse.json() : null;
+        renderSummary(payload, health);
+        renderLiveTabs(payload);
+        renderMatrix(payload);
+
+        if (refreshSeconds !== payload.refresh_seconds) {
+          refreshSeconds = payload.refresh_seconds;
+          if (refreshHandle) {
+            clearInterval(refreshHandle);
+          }
+          refreshHandle = setInterval(() => refreshDashboard(false), refreshSeconds * 1000);
+        } else if (!refreshHandle) {
+          refreshHandle = setInterval(() => refreshDashboard(false), refreshSeconds * 1000);
+        }
+      } catch (error) {
+        document.getElementById('service-name').textContent = 'service: unavailable';
+        const serviceStatus = document.getElementById('service-status');
+        serviceStatus.className = 'status danger';
+        serviceStatus.textContent = 'Backend unavailable';
+        document.getElementById('matrix-host').textContent = `Failed to load live dashboard: ${error.message}`;
+        if (showError) {
+          showToast(`Failed to load dashboard: ${error.message}`);
+        }
+      }
+    }
+
+    refreshDashboard(true);
+  </script>
+</body>
+</html>

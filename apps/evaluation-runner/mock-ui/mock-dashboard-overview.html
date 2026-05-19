@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evaluation Baseline Overview Mock</title>
+  <link rel="stylesheet" href="./mock-dashboard-style.css" />
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>Evaluation Baseline Overview</h1>
+          <div class="subtle">Latest completed run set for Domain 4 targets. Foundry remains the official score source; this dashboard focuses on cross-target semantics.</div>
+        </div>
+        <div class="mono">test_run_id: baseline-2026-05-19-01</div>
+      </div>
+      <div class="hero-bottom">
+        <span class="status success">6 / 8 target × test combinations completed</span>
+        <span class="status warn">1 blocked</span>
+        <span class="status na">1 N/A</span>
+      </div>
+    </section>
+
+    <section class="tabs">
+      <a class="tab" href="./mock-dashboard-index.html"><div class="tab-title">Mock Index</div><div class="tab-meta">Entry</div></a>
+      <a class="tab active" href="./mock-dashboard-overview.html"><div class="tab-title">Overview</div><div class="tab-meta">Status + heatmap</div></a>
+      <a class="tab" href="./mock-dashboard-quality.html"><div class="tab-title">T1 Quality</div><div class="tab-meta">Cross-model</div></a>
+      <a class="tab" href="./mock-dashboard-rag-contrast.html"><div class="tab-title">T2 RAG Contrast</div><div class="tab-meta">RAG vs Agent</div></a>
+      <a class="tab" href="./mock-dashboard-safety.html"><div class="tab-title">T3 Safety</div><div class="tab-meta">Risk</div></a>
+      <a class="tab" href="./mock-dashboard-target-rag-service.html"><div class="tab-title">Target Detail</div><div class="tab-meta">Drilldown</div></a>
+    </section>
+
+    <section class="grid four">
+      <div class="metric-card">
+        <div class="metric-label">Completed official runs</div>
+        <div class="metric-value">6</div>
+        <div class="metric-foot">Foundry run + dashboard join complete</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Targets covered</div>
+        <div class="metric-value">5</div>
+        <div class="metric-foot">RAG, Agent, Native, Fine-tune, VM</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Blocked combinations</div>
+        <div class="metric-value">1</div>
+        <div class="metric-foot">Foundry agent T3 pending official path</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Latest summary</div>
+        <div class="metric-value">Pass</div>
+        <div class="metric-foot">T1/T3 broadly healthy; T2 citation gap visible</div>
+      </div>
+    </section>
+
+    <div class="grid two" style="margin-top: 20px;">
+      <section class="table-card">
+        <h2 class="panel-title">Target × test status heatmap</h2>
+        <table class="heatmap">
+          <tr>
+            <th>Target</th>
+            <th>T1 Quality</th>
+            <th>T2 RAG Contrast</th>
+            <th>T3 Safety</th>
+          </tr>
+          <tr>
+            <th>RAG Governance Service</th>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+          </tr>
+          <tr>
+            <th>Foundry Custom Agent</th>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+            <td class="cell-warn"><span class="status warn">Blocked</span></td>
+          </tr>
+          <tr>
+            <th>Foundry Native Model</th>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+            <td class="cell-na"><span class="status na">N/A</span></td>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+          </tr>
+          <tr>
+            <th>Foundry Fine-tune Model</th>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+            <td class="cell-na"><span class="status na">N/A</span></td>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+          </tr>
+          <tr>
+            <th>VM Hugging Face Model</th>
+            <td class="cell-warn"><span class="status warn">Running</span></td>
+            <td class="cell-na"><span class="status na">N/A</span></td>
+            <td class="cell-ok"><span class="status success">Completed</span></td>
+          </tr>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2 class="panel-title">Evaluation baseline findings</h2>
+        <ul class="list">
+          <li>RAG service and Foundry agent both answer the 5-PDF governance questions well, but the agent returns less stable citation metadata.</li>
+          <li>Fine-tune quality is strong on <span class="mono">source_group=five_pdf_derived</span>, consistent with its training data.</li>
+          <li>VM model remains acceptable for short prompts but trails on fluency and answer completeness.</li>
+          <li>Safety baseline shows low failure rate across all completed model targets.</li>
+          <li>Every row keeps a Foundry run link for official aggregate score and sample-level explanation drill-down.</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="grid two" style="margin-top: 20px;">
+      <section class="card">
+        <h2 class="panel-title">Overall score summary</h2>
+        <div class="chart">
+          <div class="chart-title">Latest average score by target</div>
+          <div class="bars">
+            <div class="bar-row"><div>RAG Governance Service</div><div class="bar-track"><div class="bar-fill" style="width: 88%;"></div></div><div>0.88</div></div>
+            <div class="bar-row"><div>Foundry Custom Agent</div><div class="bar-track"><div class="bar-fill" style="width: 83%;"></div></div><div>0.83</div></div>
+            <div class="bar-row"><div>Foundry Fine-tune Model</div><div class="bar-track"><div class="bar-fill" style="width: 85%;"></div></div><div>0.85</div></div>
+            <div class="bar-row"><div>Foundry Native Model</div><div class="bar-track"><div class="bar-fill" style="width: 81%;"></div></div><div>0.81</div></div>
+            <div class="bar-row"><div>VM Hugging Face Model</div><div class="bar-track"><div class="bar-fill warn" style="width: 66%;"></div></div><div>0.66</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="table-card">
+        <h2 class="panel-title">Latest official run links</h2>
+        <table class="table">
+          <tr><th>Target</th><th>Test</th><th>Status</th><th>Foundry report</th></tr>
+          <tr><td>RAG Governance Service</td><td>T2</td><td><span class="status success">Completed</span></td><td><span class="mono">report_url</span></td></tr>
+          <tr><td>Foundry Custom Agent</td><td>T2</td><td><span class="status success">Completed</span></td><td><span class="mono">report_url</span></td></tr>
+          <tr><td>Foundry Native Model</td><td>T1</td><td><span class="status success">Completed</span></td><td><span class="mono">report_url</span></td></tr>
+          <tr><td>Foundry Fine-tune Model</td><td>T1</td><td><span class="status success">Completed</span></td><td><span class="mono">report_url</span></td></tr>
+          <tr><td>VM Hugging Face Model</td><td>T1</td><td><span class="status warn">Running</span></td><td><span class="mono">report pending</span></td></tr>
+        </table>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
